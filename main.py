@@ -1,11 +1,9 @@
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import laplacian
-from typing import Iterable, Set, Dict, List
 from collections import deque
 import random
 import numpy as np
 import networkx as nx
-import time
 import json
 import matplotlib.pyplot as plt
 
@@ -15,6 +13,7 @@ class Vertex:
         self.id = id
         self.adj = []
         self.degree = 0
+        self.coarse = False
     
     def __str__(self):
         return f"Vertex: {self.id}"
@@ -35,7 +34,7 @@ class GraphVertex(Vertex):
         self.graph = None
     
 class Graph:
-    def __init__(self, vertex_list: list[Vertex] = None, adj_matrix: coo_matrix = None):
+    def __init__(self, vertex_list = None, adj_matrix = None):
         if adj_matrix is not None:
             self.adjacency_matrix = adj_matrix
             self.vertex_dict = {}
@@ -95,8 +94,51 @@ class Graph:
             neighbors_to_remove = [neighbor for vertex in subset for neighbor in vertex.adj]
             remaining_vertices.difference_update(subset)
             remaining_vertices.difference_update(neighbors_to_remove)
+            
+        for vertex in independent_set:
+            vertex.coarse = True
+        
         return independent_set
     
+    def sort_by_coarse_matrix(self):
+        
+        sorted_vertices = sorted(self.vertex_dict.values(), key=lambda x: x.coarse, reverse=True)
+        
+        num_coarse = sum(1 for vertex in sorted_vertices if vertex.coarse)
+        num_fine = len(sorted_vertices) - num_coarse
+        
+        vertex_dict = {i: vertex for i, vertex in enumerate(sorted_vertices)}
+        vertex_dict_reversed = {vertex: i for i, vertex in vertex_dict.items()}
+        
+        row = []
+        col = []
+        
+        for vertex in vertex_dict.values():
+            for neighbor in vertex.adj:
+                if neighbor not in vertex_dict_reversed:
+                    continue
+                row.append(vertex_dict_reversed[vertex])
+                col.append(vertex_dict_reversed[neighbor])
+                
+        adjacency_matrix = coo_matrix((np.ones(len(row)), (row, col)), shape=(len(vertex_dict), len(vertex_dict)))
+        
+        adjacency_matrix_laplacian = laplacian(adjacency_matrix).toarray()
+        a11 = adjacency_matrix_laplacian[0:num_coarse, 0:num_coarse]
+        a22 = adjacency_matrix_laplacian[num_coarse:, num_coarse:]
+        a21 = adjacency_matrix_laplacian[num_coarse:, 0:num_coarse]
+        a12 = adjacency_matrix_laplacian[0:num_coarse, num_coarse:]
+        
+        print("-" * 20)
+        print(f"Number of coarse vertices: {num_coarse}")
+        print(adjacency_matrix_laplacian)
+        a22_inv = np.linalg.pinv(a22)
+        print("-"   * 20)
+        print(a22)
+        print(a22_inv)
+        print("-"   * 20)
+        print(a11 - a12 @ a22_inv @ a21)
+        
+        return adjacency_matrix
     
 def construct_mis_graph(independent_set):
     vertex_dict = {}
@@ -134,7 +176,7 @@ def construct_mis_graph(independent_set):
                     depth[neighbor] = current_depth + 1
                     queue.append(neighbor)
             
-        vertex.graph = Graph(vertex_list=vertex_list)
+        vertex_dict[vertex].graph = Graph(vertex_list=vertex_list)
     
     g = Graph(vertex_list=list(vertex_dict.values()))
     return g
@@ -244,6 +286,8 @@ independent_set = g.maximal_independent_set()
 colors = ['red' if i in [x.id for x in independent_set] else 'blue' for i in range(n*n)]
 visualize_graph(g, colors)
 mis_graph = construct_mis_graph(independent_set)
+for vertex in mis_graph.vertex_dict.values():
+    vertex.graph.sort_by_coarse_matrix()
 visualize_graph(mis_graph)
 
 
