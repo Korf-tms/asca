@@ -7,7 +7,6 @@ import networkx as nx
 import json
 import matplotlib.pyplot as plt
 
-
 class Vertex:
     def __init__(self, id):
         self.id = id
@@ -34,13 +33,19 @@ class GraphVertex(Vertex):
         self.graph = None
     
 class Graph:
-    def __init__(self, vertex_list = None, adj_matrix = None):
-        if adj_matrix is not None:
+    #adjacency_matrix - adj matrix of the graph
+    #vertex_dict - vertex dictionary with structure (index in adjacency matrix : vertex)
+    #vertex_dict_reversed - reversed vertex_dict
+    #global_graph - original graph of self if self was created by mis
+    def __init__(self, vertex_list = None, adj_matrix = None, global_graph = None):
+        if adj_matrix is not None:#this constructor is used only at the start
             self.adjacency_matrix = adj_matrix
             self.vertex_dict = {}
+            self.vertex_dict_reversed = {}
 
             for idx in range(self.adjacency_matrix.shape[0]):
                 self.vertex_dict[idx] = Vertex(id=idx)
+                self.vertex_dict_reversed[self.vertex_dict[idx]] = idx
 
             row = self.adjacency_matrix.row
             col = self.adjacency_matrix.col
@@ -48,25 +53,17 @@ class Graph:
             for r, c in zip(row, col):
                 self.vertex_dict[r].adj.append(self.vertex_dict[c])
                 self.vertex_dict[r].degree += 1
-        elif vertex_list is not None:
+        elif vertex_list is not None:#normal constructor
             self.vertex_dict = {i: vertex for i, vertex in enumerate(vertex_list)}
-            vertex_dict_reversed = {vertex: i for i, vertex in self.vertex_dict.items()}
+            self.vertex_dict_reversed = {vertex: i for i, vertex in enumerate(vertex_list)}
+            self.num_coarse = sum(1 for vertex in self.vertex_dict.values() if vertex.coarse)
+            self.adjacency_matrix = self.vertex_list_to_matrix()
+            self.sorted_vertices = sorted(self.vertex_dict.values(), key=lambda x: x.coarse, reverse=True)
             
-            row = []
-            col = []
-            
-            for vertex in self.vertex_dict.values():
-                for neighbor in vertex.adj:
-                    if neighbor not in vertex_dict_reversed:
-                        continue
-                    row.append(vertex_dict_reversed[vertex])
-                    col.append(vertex_dict_reversed[neighbor])
-                    
-            self.adjacency_matrix = coo_matrix((np.ones(len(row)), (row, col)), shape=(len(self.vertex_dict), len(self.vertex_dict)))
-        
-        self.laplacian_matrix = coo_matrix(laplacian(self.adjacency_matrix))
-        
+        self.global_graph = global_graph
+    
     def maximal_independent_set(self):
+        #returns set of coarse vertices
         independent_set = set()
         remaining_vertices = set(self.vertex_dict.values())
         
@@ -100,55 +97,60 @@ class Graph:
         
         return independent_set
     
-    def sort_by_coarse_matrix(self):
-        
-        sorted_vertices = sorted(self.vertex_dict.values(), key=lambda x: x.coarse, reverse=True)
-        
-        num_coarse = sum(1 for vertex in sorted_vertices if vertex.coarse)
-        num_fine = len(sorted_vertices) - num_coarse
-        
-        vertex_dict = {i: vertex for i, vertex in enumerate(sorted_vertices)}
-        vertex_dict_reversed = {vertex: i for i, vertex in vertex_dict.items()}
-        
+    def vertex_list_to_matrix(self, vertex_list = None):
+        if vertex_list is None:
+            vertex_dict = self.vertex_dict_reversed
+        else:
+            vertex_dict = {vertex:i for i, vertex in enumerate(vertex_list)}
+            
         row = []
         col = []
         
-        for vertex in vertex_dict.values():
+        for vertex in vertex_dict.keys():
             for neighbor in vertex.adj:
-                if neighbor not in vertex_dict_reversed:
+                if neighbor not in vertex_dict:
                     continue
-                row.append(vertex_dict_reversed[vertex])
-                col.append(vertex_dict_reversed[neighbor])
+                row.append(vertex_dict[vertex])
+                col.append(vertex_dict[neighbor])
                 
-        adjacency_matrix = coo_matrix((np.ones(len(row)), (row, col)), shape=(len(vertex_dict), len(vertex_dict)))
-        
-        adjacency_matrix_laplacian = laplacian(adjacency_matrix).toarray()
-        a11 = adjacency_matrix_laplacian[0:num_coarse, 0:num_coarse]
-        a22 = adjacency_matrix_laplacian[num_coarse:, num_coarse:]
-        a21 = adjacency_matrix_laplacian[num_coarse:, 0:num_coarse]
-        a12 = adjacency_matrix_laplacian[0:num_coarse, num_coarse:]
-        
-        print("-" * 20)
-        print(f"Number of coarse vertices: {num_coarse}")
-        print(adjacency_matrix_laplacian)
-        a22_inv = np.linalg.pinv(a22)
-        print("-"   * 20)
-        print(a22)
-        print(a22_inv)
-        print("-"   * 20)
-        print(a11 - a12 @ a22_inv @ a21)
-        
-        return adjacency_matrix
+        return coo_matrix((np.ones(len(row)), (row, col)), shape=(len(vertex_dict), len(vertex_dict)))
     
-def construct_mis_graph(independent_set):
+    def local_schur_complement(self):
+        adjacency_matrix = self.vertex_list_to_matrix(self.sorted_vertices)
+
+        adjacency_matrix_laplacian = laplacian(adjacency_matrix).toarray()
+        a11 = adjacency_matrix_laplacian[0:self.num_coarse, 0:self.num_coarse]
+        a22 = adjacency_matrix_laplacian[self.num_coarse:, self.num_coarse:]
+        a21 = adjacency_matrix_laplacian[self.num_coarse:, 0:self.num_coarse]
+        a12 = adjacency_matrix_laplacian[0:self.num_coarse, self.num_coarse:]
+        a22_inv = np.linalg.pinv(a22)
+        
+        return a11 - a12 @ a22_inv @ a21
+    
+    def local_to_global_mapping(self):
+        #row is true global vertex
+        #column is local coarse
+        local_to_global_mapping_matrix = np.zeros((len(self.global_graph.vertex_dict.values()), self.num_coarse))
+        coarse = [x for x in self.sorted_vertices if x.coarse]
+        
+        for i, vertex in enumerate(coarse):
+            local_to_global_mapping_matrix[self.global_graph.vertex_dict_reversed[vertex]][i] = 1
+        
+        return coo_matrix(local_to_global_mapping_matrix)
+    
+    
+def construct_mis_graph(independent_set, graph):
+    #constructs new graph from the independent set, connects all coarse vertices that are max 3 hops apart
+    #each vertex V in this graph has its own subgraph
+    #subgraph contains vertices that are max 2 depth from V
+    
     vertex_dict = {}
     for i, vertex in enumerate(independent_set):
-        vertex_dict[vertex] = GraphVertex(vertex = vertex if isinstance(vertex, Vertex) else vertex.global_vertex , id=i)
-        
-    for vertex in vertex_dict.keys(): 
-        
-        vertex_list = []
-        
+        vertex_dict[vertex] = GraphVertex(vertex = vertex, id=i)#creates new vertex with global vertex from the original graph
+
+    for vertex in vertex_dict.keys():
+        vertex_list = []#subgraph
+
         visited = set()
         depth = {}
         queue = deque()
@@ -156,14 +158,14 @@ def construct_mis_graph(independent_set):
         visited.add(vertex)
         depth[vertex] = 0
         queue.append(vertex)
-        while queue:
+        while queue:#bfs
             current = queue.popleft()
             current_depth = depth[current]
             
             if current_depth <= 2:
-                vertex_list.append(current)
+                vertex_list.append(current)#adding vertex to the subgraph
             
-            if current in independent_set and current != vertex:
+            if current in independent_set and current != vertex:#connecting the coarse vertices
                 vertex_dict[vertex].adj.append(vertex_dict[current])
                 vertex_dict[vertex].degree += 1
             
@@ -176,9 +178,9 @@ def construct_mis_graph(independent_set):
                     depth[neighbor] = current_depth + 1
                     queue.append(neighbor)
             
-        vertex_dict[vertex].graph = Graph(vertex_list=vertex_list)
+        vertex_dict[vertex].graph = Graph(vertex_list=vertex_list, global_graph=graph)
     
-    g = Graph(vertex_list=list(vertex_dict.values()))
+    g = Graph(vertex_list=list(vertex_dict.values()), global_graph=graph)
     return g
     
 #generate graph with max 4 deg, made by ai
@@ -285,10 +287,15 @@ independent_set = g.maximal_independent_set()
 #save_as_json(g, "graph100vertices.json")
 colors = ['red' if i in [x.id for x in independent_set] else 'blue' for i in range(n*n)]
 visualize_graph(g, colors)
-mis_graph = construct_mis_graph(independent_set)
+mis_graph = construct_mis_graph(independent_set, g)
 for vertex in mis_graph.vertex_dict.values():
-    vertex.graph.sort_by_coarse_matrix()
+    print("-" * 30)
+    print(len(g.vertex_dict.values()))
+    print(vertex.graph.local_schur_complement())
+    print(vertex.graph.num_coarse)
+    print(vertex.graph.local_to_global_mapping())
+           
 visualize_graph(mis_graph)
 
-
-
+#overlaping
+#to what do we apply the scaling factor?
