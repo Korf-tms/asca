@@ -2,45 +2,71 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from graph import GraphVertex
 import random
-
-
+import csv
+import numpy as np
 def visualize_graph(graph, color='red'):
     G_nx = nx.Graph()
+    colors = []
+    for vertex in graph.vertex_list:
+        try:
+            colors.append("red" if vertex.original_vertex.coarse else "blue")
+        except AttributeError:
+            colors.append("red" if vertex.coarse else "blue")
 
-    for vertex in graph.vertex_dict.values():
-        G_nx.add_node(vertex.id)
-            
-    coo = graph.adjacency_matrix
-    for u_idx, v_idx in zip(coo.row, coo.col):
-        vertex_u = list(graph.vertex_dict.values())[u_idx]
-        vertex_v = list(graph.vertex_dict.values())[v_idx]
-        u = vertex_u.id
-        v = vertex_v.id
+    for vertex in graph.vertex_list:
+        try:
+            G_nx.add_node(vertex.original_vertex.id)
+        except AttributeError:
+            G_nx.add_node(vertex.id)
+
+    adj_matrix = graph.vertex_list_to_adj_matrix(graph.vertex_list)
+
+    u_indices, v_indices = np.nonzero(adj_matrix)
+    for u_idx, v_idx in zip(u_indices, v_indices):
+        vertex_u = list(graph.vertex_list)[u_idx]
+        vertex_v = list(graph.vertex_list)[v_idx]
+        try:
+            u = vertex_u.original_vertex.id
+            v = vertex_v.original_vertex.id
+        except AttributeError:
+            u = vertex_u.id
+            v = vertex_v.id
         if u != v:
             G_nx.add_edge(u, v)
 
     pos = nx.kamada_kawai_layout(G_nx)
     plt.figure(figsize=(8, 6))
-    if isinstance(graph.vertex_dict[0], GraphVertex):
-        labels = {vertex.id: vertex.global_vertex.id for vertex in graph.vertex_dict.values()}
-        nx.draw(G_nx, pos, labels=labels, node_color=color, node_size=500, font_weight='bold')
-    else:
-        nx.draw(G_nx, pos, with_labels=True, node_color=color, node_size=500, font_weight='bold')
+    nx.draw(G_nx, pos, with_labels=True, node_color=colors, node_size=500, font_weight='bold')
     plt.title("Graph")
-    plt.show()
+    plt.savefig(f"images/{graph.name}.png", dpi=300, bbox_inches='tight')
+    plt.close()
 
 
-def generate_grpah(rows, cols, connection_prob=0.8, perturbation=0.3):
+
+def generate_graph_to_coo_csv(rows, cols, csv_filename, connection_prob=0.9):
+    """
+    Generate a perturbed grid-like graph, ensure connectivity,
+    and export its adjacency matrix in COO sparse format to CSV.
+    
+    Args:
+        rows (int): Number of rows in grid
+        cols (int): Number of cols in grid
+        csv_filename (str): Output CSV file path
+        connection_prob (float): Probability to keep an edge
+    """
+    # Start with grid
     G = nx.grid_2d_graph(rows, cols)
 
     edges = list(G.edges())
     random.shuffle(edges)
     
+    # Randomly remove edges
     for u, v in edges:
         if random.random() > connection_prob:
             if G.degree(u) > 1 and G.degree(v) > 1:
                 G.remove_edge(u, v)
     
+    # Ensure graph is connected
     if not nx.is_connected(G):
         components = list(nx.connected_components(G))
         while len(components) > 1:
@@ -60,17 +86,18 @@ def generate_grpah(rows, cols, connection_prob=0.8, perturbation=0.3):
             G.add_edge(*best_pair)
             components = list(nx.connected_components(G))
     
-    pos = {}
-    for i in range(rows):
-        for j in range(cols):
-            if (i, j) in G.nodes():
-                x = j + random.uniform(-perturbation, perturbation)
-                y = i + random.uniform(-perturbation, perturbation)
-                pos[(i, j)] = (x, y)
-    
+    # Relabel nodes to integers
     mapping = {node: i for i, node in enumerate(G.nodes())}
     G = nx.relabel_nodes(G, mapping)
+
+    # Convert to sparse adjacency matrix (COO)
+    A = nx.to_scipy_sparse_array(G, format="coo", dtype=int)
+
+    # Save COO format (row, col, value) to CSV
+    with open(csv_filename, mode="w", newline="") as f:
+        writer = csv.writer(f, delimiter=',')
+        writer.writerow(["row", "col", "val"])
+        for r, c, v in zip(A.row, A.col, A.data):
+            writer.writerow([r, c, int(v)])  # adjacency is 1s
     
-    new_pos = {mapping[node]: pos[node] for node in pos}
-    
-    return G, new_pos
+    return G, A
