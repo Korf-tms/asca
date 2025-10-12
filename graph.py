@@ -1,6 +1,6 @@
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import laplacian
-from numpy import ones, zeros, linalg, array
+from numpy import zeros, linalg
 from collections import deque
 import random
 import csv
@@ -15,12 +15,13 @@ class Vertex:
         self.id = id
         self.adj = []
         self.coarse = False
+        self.name = ""
     
     def __str__(self):
-        return f"Vertex: {self.id}"
+        return f"{self.name}Vertex: {self.id}"
     
     def __repr__(self):
-        return f"Vertex: {self.id}"
+        return f"{self.name}Vertex: {self.id}"
 
     def __hash__(self):
         return hash(self.id)
@@ -33,14 +34,14 @@ class GraphVertex(Vertex):
         super().__init__(id)
         self.graph = None
         self.original_vertex = vertex
+        self.name = "Graph"
 
 class SubgraphVertex(Vertex):
     def __init__(self, id: int = None, vertex : Vertex = None):
         super().__init__(id)
         self.original_vertex = vertex
+        self.name = "Subgraph"
     
-
-
 #-------------------------------------------------------------------------------------------------------------------
 class Graph:
     def __init__(self, vertex_list = []):
@@ -65,10 +66,11 @@ class Graph:
         row = []
         col = []
         val = []
+        mapping = {vertex: i for i, vertex in enumerate(vertex_list)}
         for vertex in vertex_list:
             for neighbor in vertex.adj:
-                row.append(vertex.id)
-                col.append(neighbor.id)
+                row.append(mapping[vertex])
+                col.append(mapping[neighbor])
                 val.append(1)
 
         shape = len(vertex_list)
@@ -108,16 +110,17 @@ class Graph:
         for vertex in independent_set:
             vertex.coarse = True
         
+        self.sorted_vertex_adj_matrix_mapping = {vertex: i for i, vertex in enumerate(sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False))}
+
         return independent_set
 
     def local_schur_complement(self):
         num_coarse = sum(1 for vertex in self.vertex_list if vertex.coarse)
-        sorted_vertices = sorted(self.vertex_list, key=lambda x: x.coarse, reverse=True)
-
+        if num_coarse == 0:
+            return
+        sorted_vertices = sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False)
         adjacency_matrix = self.vertex_list_to_adj_matrix(sorted_vertices)
-
         adjacency_matrix_laplacian = laplacian(adjacency_matrix)
-
         a11 = adjacency_matrix_laplacian[0:num_coarse, 0:num_coarse]
         a22 = adjacency_matrix_laplacian[num_coarse:, num_coarse:]
         a21 = adjacency_matrix_laplacian[num_coarse:, 0:num_coarse]
@@ -128,13 +131,17 @@ class Graph:
 class CoarseGraph(Graph):
     def __init__(self, independent_set, graph : Graph):
         self.name = "CoarseGraph"
-        logging.info("Creating coarse graph")
-        original_vertex_to_graph_vertex = {}
-        temp = len(graph.vertex_list)
-        self.count_matrix = np.zeros((temp, temp), dtype=float)
-        index = 0
+        self.count_matrix = dict()
+        self.parent : Graph = graph
+        self.vertex_list = list()
+
+        original_vertex_to_graph_vertex = dict()
+        
+        subgraph_count = 0
         for iterator, original_vertex in enumerate(independent_set):
-            original_vertex_to_graph_vertex[original_vertex] = GraphVertex(id=iterator, vertex=original_vertex)
+            graph_vertex = GraphVertex(id=iterator, vertex=original_vertex)
+            self.vertex_list.append(graph_vertex)
+            original_vertex_to_graph_vertex[original_vertex] = graph_vertex
 
         for original_vertex in original_vertex_to_graph_vertex.keys():
             vertex_list = [] 
@@ -159,75 +166,73 @@ class CoarseGraph(Graph):
                 vertex_list.append(current)#creating the subgraph
 
                 for neighbor in current.adj:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        depth[neighbor] = current_depth + 1
-                        queue.append(neighbor)
+                    if neighbor in visited:
+                        continue
+                    visited.add(neighbor)
+                    depth[neighbor] = current_depth + 1
+                    queue.append(neighbor)
 
-            original_vertex_to_graph_vertex[original_vertex].graph = SubGraph(vertex_list=vertex_list, graph=self, name=f"SubGraph{index}")
-            index += 1
-
-        self.vertex_list = list(original_vertex_to_graph_vertex.values())
-        self.vertex_list = sorted(self.vertex_list, key=lambda x: x.original_vertex.coarse, reverse=True)
-        self.coarse_indexed_list = {vertex: i for i, vertex in enumerate(original_vertex_to_graph_vertex.keys())}
-        self.parent = graph
-        logging.info(f"coarse graph: {self.vertex_list}")
-        for vertex in self.vertex_list:
-            logging.info(f"{vertex} adj: {vertex.adj}")
-        logging.info(f"count matrix:\n{self.count_matrix}")
+            original_vertex_to_graph_vertex[original_vertex].graph = SubGraph(vertex_list=vertex_list, graph=self, name=f"SubGraph{subgraph_count}")
+            subgraph_count += 1
 
 class SubGraph(Graph):
     def __init__(self, vertex_list, graph, name):
-        logging.info("creating subgraph")
-        original_vertex_to_subgraph_vertex = {original_vertex: SubgraphVertex(id= i, vertex=original_vertex) 
-                                              for i, original_vertex 
-                                              in enumerate(sorted(vertex_list, key=lambda x: x.coarse, reverse=True))}
+        self.name = name
+        self.vertex_list =  list()
+        self.parent : CoarseGraph = graph
+        
+        original_vertex_to_subgraph_vertex = dict()
+        for i, original_vertex in enumerate(vertex_list):
+            subgraph_vertex = SubgraphVertex(id= i, vertex=original_vertex) 
+            original_vertex_to_subgraph_vertex[original_vertex] = subgraph_vertex
+            self.vertex_list.append(subgraph_vertex)
 
-        #connecting the local subGraphVertex graph
-        for vertex in vertex_list:
+        self.num_coarse = sum(1 for vertex in self.vertex_list if vertex.original_vertex.coarse)
+        self.sorted_vertex_list = sorted(self.vertex_list, key=lambda x: (not x.original_vertex.coarse, x.id), reverse=False)
+
+        visited = set()
+        queue = deque([vertex_list[0]])
+
+        while queue:
+            vertex = queue.popleft()
+            if vertex in visited:
+                continue
+            visited.add(vertex)
+
             for neighbour in vertex.adj:
                 if neighbour not in vertex_list:
                     continue
-                original_vertex_to_subgraph_vertex[vertex].adj.append(original_vertex_to_subgraph_vertex[neighbour])
-                graph.count_matrix[vertex.id, neighbour.id] += 1
-        
-        self.name = name
-        self.vertex_list =  list(original_vertex_to_subgraph_vertex.values())
-        self.num_coarse = sum(1 for vertex in self.vertex_list if vertex.original_vertex.coarse)
-        self.parent : CoarseGraph = graph
-        logging.info(f"vertex list: {self.vertex_list}, num coarse: {self.num_coarse}")
+
+                if original_vertex_to_subgraph_vertex[neighbour] not in original_vertex_to_subgraph_vertex[vertex].adj:
+                    original_vertex_to_subgraph_vertex[vertex].adj.append(original_vertex_to_subgraph_vertex[neighbour])
+                    graph.count_matrix[(vertex.id, neighbour.id)] = graph.count_matrix.get((vertex.id, neighbour.id), 0) + 1
+
+                if neighbour not in visited:
+                    queue.append(neighbour)
     
+
     def local_schur_complement(self):
-
-        logging.info("computing local schur complement")
-        adjacency_matrix = self.vertex_list_to_adj_matrix(self.vertex_list)
-        logging.info(f"adj matrix before:\n {adjacency_matrix}")
-
-        test = set()
+        adjacency_matrix = self.vertex_list_to_adj_matrix(self.sorted_vertex_list)
+        vertex_ajd_matrix_mapping = {vertex: i for i, vertex in enumerate(self.sorted_vertex_list)}
         for vertex in self.vertex_list:
             for neighbour in vertex.adj:
-                if((vertex.id, neighbour.id) in test):
-                    continue
-                test.add((vertex.id, neighbour.id))
-                adjacency_matrix[vertex.id, neighbour.id] = adjacency_matrix[vertex.id, neighbour.id] / self.parent.count_matrix[vertex.original_vertex.id, neighbour.original_vertex.id]
-
-        logging.info(f"adj matrix after:\n {adjacency_matrix}")
+                adjacency_matrix[vertex_ajd_matrix_mapping[vertex], 
+                                 vertex_ajd_matrix_mapping[neighbour]] /= self.parent.count_matrix[(vertex.original_vertex.id, 
+                                                                                                    neighbour.original_vertex.id)]
         adjacency_matrix_laplacian = laplacian(adjacency_matrix)
-        logging.info(f"adj matrix laplacian:\n {adjacency_matrix_laplacian}")
         a11 = adjacency_matrix_laplacian[0:self.num_coarse, 0:self.num_coarse]
         a22 = adjacency_matrix_laplacian[self.num_coarse:, self.num_coarse:]
         a21 = adjacency_matrix_laplacian[self.num_coarse:, 0:self.num_coarse]
         a12 = adjacency_matrix_laplacian[0:self.num_coarse, self.num_coarse:]
         temp = a11 - a12 @ linalg.solve(a22, a21)
-        logging.info(f"schur complement:\n{temp}")
         return temp
     
     def local_to_global_mapping(self):
         #row is true global vertex
         #column is local coarse
         local_to_global_mapping_matrix = zeros((len(self.parent.vertex_list), self.num_coarse))
-        coarse = [x for x in self.vertex_list if x.original_vertex.coarse]
-        for vertex in coarse:
-            local_to_global_mapping_matrix[self.parent.coarse_indexed_list[vertex.original_vertex]][vertex.id] = 1
+        coarse = sorted([x for x in self.vertex_list if x.original_vertex.coarse], key=lambda x: x.id)
+        for i, vertex in enumerate(coarse):
+            local_to_global_mapping_matrix[self.parent.parent.sorted_vertex_adj_matrix_mapping[vertex.original_vertex]][i] = 1
         return coo_matrix(local_to_global_mapping_matrix)
     
