@@ -1,3 +1,4 @@
+import sys
 import graph
 import utils
 import numpy as np
@@ -11,13 +12,11 @@ logger = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO, filename=f"log/{time.strftime("%d_%m_%Y_%M_%S")}.log", format='%(asctime)s, %(levelname)s: %(message)s')
 
-utils.generate_graph_to_coo_csv(5, 5, "input.csv")
+utils.generate_graph_to_coo_csv(5, 5, sys.argv[1])
 
-main_graph = graph.Graph()
-main_graph.init_from_csv("C:/Other/School/ZaverecnaPrace/input.csv")
-mis = main_graph.maximal_independent_set()
+main_graph = graph.Graph(path=sys.argv[1])
 utils.visualize_graph(main_graph)
-coarse_graph = graph.CoarseGraph(mis, main_graph)
+coarse_graph = graph.CoarseGraph(main_graph.coarse_vertices, main_graph)
 utils.visualize_graph(coarse_graph)
 Q = 0
 for vertex in coarse_graph.vertex_list:
@@ -39,3 +38,4 @@ np.savetxt("csv/test.csv", eigh(Q, schur)[0] , delimiter=",", fmt="%.2f")
 #mrizky 
 #input graf, rozdeleni, poddomeny
 #hdf5
+#redo class logic

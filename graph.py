@@ -44,14 +44,30 @@ class SubgraphVertex(Vertex):
     
 #-------------------------------------------------------------------------------------------------------------------
 class Graph:
-    def __init__(self, vertex_list = []):
-        self.vertex_list = vertex_list
-        self.name = "MainGraph"
+    def __init__(self, vertex_list = None, path = ""):
+        if vertex_list != None:
+            self.vertex_list = vertex_list
+        elif path != "":
+            split_path = path.split(".")
+            if split_path[1] == "csv":
+                self.init_from_csv(path)
 
-    def init_from_csv(self, path):
+        self.name = "MainGraph"
+        self.coarse_vertices = self.select_with_spacing(1)
+        for vertex in self.coarse_vertices:
+            vertex.coarse = True
+        self.sorted_vertex_adj_matrix_mapping = {vertex: i for i, vertex in enumerate(sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False))}
+
+    def init_from_csv(self, path, csv_type = 0):
         df = pd.read_csv(path)
-        rows = df['row'].to_numpy()
-        cols = df['col'].to_numpy()
+        if csv_type == 0:
+            self.vertex_list = self.__init_from_csv_coo(df)
+        #if csv_type == 1:
+        #   non compressed matrix
+
+    def __init_from_csv_coo(self, dataframe):
+        rows = dataframe['row'].to_numpy()
+        cols = dataframe['col'].to_numpy()
         n = int(max(rows.max(), cols.max()) + 1)
         vertex_dictionary = {i: Vertex(i) for i in range(n)}
         for r, c in zip(rows, cols):
@@ -60,7 +76,7 @@ class Graph:
             vr.adj.append(vc)
             vc.adj.append(vr)
 
-        self.vertex_list = list(vertex_dictionary.values())
+        return list(vertex_dictionary.values())
 
     def vertex_list_to_adj_matrix(self, vertex_list):
         row = []
@@ -77,6 +93,24 @@ class Graph:
         temp = np.zeros((shape, shape), dtype=float)
         temp[row, col] = val
         return temp
+
+    def select_with_spacing(self, spacing = 1):
+        coarse_vertices = set()
+        visited = set()
+        vertex_matrix = np.array(self.vertex_list)
+        vertex_matrix = vertex_matrix.reshape((5, 5))
+        for row, row_array in enumerate(vertex_matrix):
+            for col, vertex in enumerate(row_array):
+                if vertex in visited:
+                    continue
+                if vertex not in coarse_vertices:
+                    coarse_vertices.add(vertex)
+                    row_start = max(0, row - spacing)
+                    row_end   = min(vertex_matrix.shape[0], row + spacing + 1)
+                    column_start = max(0, col - spacing)
+                    column_end = min(vertex_matrix.shape[1], col + spacing + 1)
+                    visited.update(vertex_matrix[row_start:row_end, column_start:column_end].ravel())
+        return coarse_vertices
 
     def maximal_independent_set(self):
         independent_set = set()
@@ -106,16 +140,10 @@ class Graph:
             neighbors_to_remove = [neighbor for vertex in subset for neighbor in vertex.adj]
             remaining_vertices.difference_update(subset)
             remaining_vertices.difference_update(neighbors_to_remove)
-            
-        for vertex in independent_set:
-            vertex.coarse = True
-        
-        self.sorted_vertex_adj_matrix_mapping = {vertex: i for i, vertex in enumerate(sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False))}
-
         return independent_set
 
     def local_schur_complement(self):
-        num_coarse = sum(1 for vertex in self.vertex_list if vertex.coarse)
+        num_coarse = len(self.coarse_vertices)
         if num_coarse == 0:
             return
         sorted_vertices = sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False)
@@ -129,41 +157,34 @@ class Graph:
         return a11 - a12 @ linalg.solve(a22, a21)
 
 class CoarseGraph(Graph):
-    def __init__(self, independent_set, graph : Graph):
+    def __init__(self, coarse_vertices, parent_graph : Graph):
         self.name = "CoarseGraph"
         self.count_matrix = dict()
-        self.parent : Graph = graph
-        self.vertex_list = list()
+        self.parent : Graph = parent_graph
+        self.vertex_list = [GraphVertex(id=iterator, vertex=original_vertex)
+                            for iterator, original_vertex
+                            in enumerate(coarse_vertices)]
+        self.create_subgraphs_grid()
 
-        original_vertex_to_graph_vertex = dict()
-        
-        subgraph_count = 0
-        for iterator, original_vertex in enumerate(independent_set):
-            graph_vertex = GraphVertex(id=iterator, vertex=original_vertex)
-            self.vertex_list.append(graph_vertex)
-            original_vertex_to_graph_vertex[original_vertex] = graph_vertex
-
-        for original_vertex in original_vertex_to_graph_vertex.keys():
-            vertex_list = [] 
-
+    def connect_coarse_graph_by_depth(self, max_depth = 3):
+        original_to_local_vertex = {vertex.original_vertex: vertex for vertex in self.vertex_list}
+        for vertex in self.vertex_list:
             visited = set()
             depth = {}
             queue = deque()
 
-            visited.add(original_vertex)
-            depth[original_vertex] = 0
-            queue.append(original_vertex)
+            visited.add(vertex.original_vertex)
+            depth[vertex.original_vertex] = 0
+            queue.append(vertex.original_vertex)
+
             while queue:
                 current = queue.popleft()
                 current_depth = depth[current]
 
-                if current in independent_set and current != original_vertex and current_depth >= 3:#connecting the coarse vertices
-                    original_vertex_to_graph_vertex[original_vertex].adj.append(original_vertex_to_graph_vertex[current])
-
-                if current_depth >= 4:
+                if current_depth > max_depth:
                     continue
-
-                vertex_list.append(current)#creating the subgraph
+                if current.coarse and current != vertex.original_vertex:#connecting the coarse vertices
+                    vertex.adj.append(original_to_local_vertex[current])
 
                 for neighbor in current.adj:
                     if neighbor in visited:
@@ -172,8 +193,52 @@ class CoarseGraph(Graph):
                     depth[neighbor] = current_depth + 1
                     queue.append(neighbor)
 
-            original_vertex_to_graph_vertex[original_vertex].graph = SubGraph(vertex_list=vertex_list, graph=self, name=f"SubGraph{subgraph_count}")
-            subgraph_count += 1
+    def create_subgraphs_by_depth(self, max_depth = 3):
+        for iterator, vertex in enumerate(self.vertex_list):
+            subgraph_vertex_list = [] 
+
+            visited = set()
+            depth = {}
+            queue = deque()
+
+            visited.add(vertex.original_vertex)
+            depth[vertex.original_vertex] = 0
+            queue.append(vertex.original_vertex)
+            while queue:
+                current = queue.popleft()
+                current_depth = depth[current]
+
+                if current_depth > max_depth:
+                    continue
+
+                subgraph_vertex_list.append(current)
+
+                for neighbor in current.adj:
+                    if neighbor in visited:
+                        continue
+                    visited.add(neighbor)
+                    depth[neighbor] = current_depth + 1
+                    queue.append(neighbor)
+
+            vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
+
+    def create_subgraphs_grid(self, size = 1):
+        #should create new class for grid graphs
+        #with vertex_matrix and coord dict so we dont have to search
+        #also create some application class to to handle the different inputs instead of Graph
+        vertex_matrix = np.array(self.parent.vertex_list)
+        vertex_matrix = vertex_matrix.reshape((5, 5))
+        for iterator, vertex in enumerate(self.vertex_list):
+            res = np.where(vertex_matrix == vertex.original_vertex)
+            row = res[0][0]
+            col = res[1][0]
+            row_start = max(0, row - size)
+            row_end   = min(vertex_matrix.shape[0], row + size + 1)
+            column_start = max(0, col - size)
+            column_end = min(vertex_matrix.shape[1], col + size + 1)
+            subgraph_vertex_list = vertex_matrix[row_start:row_end, column_start:column_end].ravel()
+            vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
+
 
 class SubGraph(Graph):
     def __init__(self, vertex_list, graph, name):
@@ -213,6 +278,7 @@ class SubGraph(Graph):
 
     def local_schur_complement(self):
         adjacency_matrix = self.vertex_list_to_adj_matrix(self.sorted_vertex_list)
+
         vertex_ajd_matrix_mapping = {vertex: i for i, vertex in enumerate(self.sorted_vertex_list)}
         for vertex in self.vertex_list:
             for neighbour in vertex.adj:
