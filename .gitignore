@@ -6,3 +6,4 @@
 *.csv
 /__*/
 !schema.png
+test.py

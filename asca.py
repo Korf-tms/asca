@@ -8,11 +8,11 @@ from scipy.sparse.csgraph import laplacian
 from scipy.linalg import eigh
 n=10
 
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
 
-logging.basicConfig(level=logging.INFO, filename=f"log/{time.strftime("%d_%m_%Y_%M_%S")}.log", format='%(asctime)s, %(levelname)s: %(message)s')
+#logging.basicConfig(level=logging.INFO, filename=f"log/{time.strftime("%d_%m_%Y_%M_%S")}.log", format='%(asctime)s, %(levelname)s: %(message)s')
 
-utils.generate_graph_to_coo_csv(5, 5, sys.argv[1])
+#utils.generate_graph_to_coo_csv(5, 5, sys.argv[1])
 
 main_graph = graph.Graph(path=sys.argv[1])
 utils.visualize_graph(main_graph)
