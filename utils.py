@@ -1,9 +1,11 @@
 import networkx as nx
 import matplotlib.pyplot as plt
-from graph import GraphVertex
 import random
 import csv
 import numpy as np
+
+#utils are all ai generated, will change someday
+
 def visualize_graph(graph, color='red'):
     G_nx = nx.Graph()
     colors = []
@@ -101,3 +103,27 @@ def generate_graph_to_coo_csv(rows, cols, csv_filename, connection_prob=0.9):
             writer.writerow([r, c, int(v)])  # adjacency is 1s
     
     return G, A
+
+import os
+import shutil
+
+def clear_folder(folder_path):
+    """
+    Deletes all files and subdirectories in the given folder.
+    
+    Parameters:
+        folder_path (str): The path to the folder to clear.
+    """
+    if not os.path.exists(folder_path):
+        print(f"Folder does not exist: {folder_path}")
+        return
+
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)  # delete file or symbolic link
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)  # delete folder recursively
+        except Exception as e:
+            print(f"Failed to delete {file_path}. Reason: {e}")
