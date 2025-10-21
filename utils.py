@@ -1,10 +1,9 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 import random
-import csv
 import numpy as np
-
-#utils are all ai generated, will change someday
+import pandas as pd
+import pathlib
 
 def visualize_graph(graph, color='red'):
     G_nx = nx.Graph()
@@ -43,87 +42,30 @@ def visualize_graph(graph, color='red'):
     plt.savefig(f"images/{graph.name}.png", dpi=300, bbox_inches='tight')
     plt.close()
 
-
-
-def generate_graph_to_coo_csv(rows, cols, csv_filename, connection_prob=0.9):
-    """
-    Generate a perturbed grid-like graph, ensure connectivity,
-    and export its adjacency matrix in COO sparse format to CSV.
-    
-    Args:
-        rows (int): Number of rows in grid
-        cols (int): Number of cols in grid
-        csv_filename (str): Output CSV file path
-        connection_prob (float): Probability to keep an edge
-    """
-    # Start with grid
+def generate_grid_graph(rows, cols, filename, type="csv"):
     G = nx.grid_2d_graph(rows, cols)
 
     edges = list(G.edges())
     random.shuffle(edges)
-    
-    # Randomly remove edges
-    for u, v in edges:
-        if random.random() > connection_prob:
-            if G.degree(u) > 1 and G.degree(v) > 1:
-                G.remove_edge(u, v)
-    
-    # Ensure graph is connected
-    if not nx.is_connected(G):
-        components = list(nx.connected_components(G))
-        while len(components) > 1:
-            c1, c2 = components[0], components[1]
-            min_dist = float('inf')
-            best_pair = (None, None)
-            
-            for u in c1:
-                for v in c2:
-                    i1, j1 = u
-                    i2, j2 = v
-                    dist = abs(i1-i2) + abs(j1-j2)
-                    if dist < min_dist:
-                        min_dist = dist
-                        best_pair = (u, v)
-            
-            G.add_edge(*best_pair)
-            components = list(nx.connected_components(G))
-    
-    # Relabel nodes to integers
-    mapping = {node: i for i, node in enumerate(G.nodes())}
-    G = nx.relabel_nodes(G, mapping)
 
-    # Convert to sparse adjacency matrix (COO)
     A = nx.to_scipy_sparse_array(G, format="coo", dtype=int)
 
-    # Save COO format (row, col, value) to CSV
-    with open(csv_filename, mode="w", newline="") as f:
-        writer = csv.writer(f, delimiter=',')
-        writer.writerow(["row", "col", "val"])
-        for r, c, v in zip(A.row, A.col, A.data):
-            writer.writerow([r, c, int(v)])  # adjacency is 1s
+    dataframe = pd.DataFrame({
+        "row": A.row,
+        "col": A.col,
+        "val": A.data
+    })
     
-    return G, A
+    if type == "csv":
+        dataframe.to_csv(filename, index=False)
+    elif type == "hdf5":
+        dataframe.to_hdf(filename, key="adjmatrix", mode="w")
 
-import os
-import shutil
+def clear_folder_or_create(folder_path):
+    folder = pathlib.Path(folder_path)
 
-def clear_folder(folder_path):
-    """
-    Deletes all files and subdirectories in the given folder.
-    
-    Parameters:
-        folder_path (str): The path to the folder to clear.
-    """
-    if not os.path.exists(folder_path):
-        print(f"Folder does not exist: {folder_path}")
-        return
+    if not folder.exists():
+        folder.mkdir(parents=True, exist_ok=True)
 
-    for filename in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)  # delete file or symbolic link
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)  # delete folder recursively
-        except Exception as e:
-            print(f"Failed to delete {file_path}. Reason: {e}")
+    for filename in folder.iterdir():
+        filename.unlink()

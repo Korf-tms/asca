@@ -12,9 +12,9 @@ import logging
 
 #logging.basicConfig(level=logging.INFO, filename=f"log/{time.strftime("%d_%m_%Y_%M_%S")}.log", format='%(asctime)s, %(levelname)s: %(message)s')
 shape = (11,11)
-utils.generate_graph_to_coo_csv(shape[0], shape[1], sys.argv[1], connection_prob=1)
-utils.clear_folder("csv")
-utils.clear_folder("images")
+#utils.generate_graph_to_coo_csv(shape[0], shape[1], sys.argv[1], connection_prob=1)
+utils.clear_folder_or_create("csv")
+utils.clear_folder_or_create("images")
 
 main_graph = graph.GridGraph.from_csv(path=sys.argv[1], shape=shape)
 
@@ -54,8 +54,6 @@ plt.show()
 np.savetxt("csv/asca.csv", q_arr, delimiter=",", fmt="%f") 
 np.savetxt("csv/schurs_complement.csv", schur_arr, delimiter=",", fmt="%f") 
 np.savetxt("csv/eigen_val.csv", eigh(q_arr, schur_arr)[0], delimiter=",", fmt="%f")
-
-
 
 #psat
 #popsat funkce

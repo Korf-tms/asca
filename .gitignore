@@ -4,6 +4,7 @@
 *.json
 *.log
 *.csv
+*.hdf5
 /__*/
 !schema.png
 test.py
