@@ -2,6 +2,7 @@ from scipy.sparse.csgraph import laplacian
 from collections import deque
 from scipy.sparse import coo_matrix
 
+import pathlib as pl
 import pandas as pd
 import numpy as np
 
@@ -28,35 +29,68 @@ class Vertex:
         return isinstance(other, Vertex) and self.id == other.id
 
 class SubgraphVertex(Vertex):
-    def __init__(self, id: int = None, vertex : Vertex = None):
+    def __init__(self, id: int, vertex : Vertex):
         super().__init__(id)
         self.original_vertex = vertex
         self.name = "Subgraph"
 
 class Graph:
-    def __init__(self, vertex_list):
+    def __init__(self, vertex_list : list[Vertex]):
         self.vertex_list = vertex_list
         self.edge_count = dict()
         self.coarse_vertices = list()
         self.name = "Graph"
     
-    @classmethod
-    def from_csv(cls, path):
-        dataframe = pd.read_csv(path)
-        rows = dataframe['row'].to_numpy()
-        cols = dataframe['col'].to_numpy()
+    @staticmethod
+    def __vertex_list_from_coo(rows, cols, values):
+
+        if len(rows) != len(cols) != len(values):
+            raise ValueError("Invalid COO representation")
+
         n = int(max(rows.max(), cols.max()) + 1)
         vertex_dictionary = {i: Vertex(i) for i in range(n)}
-        for r, c in zip(rows, cols):
-            vr = vertex_dictionary[int(r)]
-            vc = vertex_dictionary[int(c)]
+        for row, col in zip(rows, cols):
+            vr = vertex_dictionary[int(row)]
+            vc = vertex_dictionary[int(col)]
             if vc not in vr.adj:
                 vr.adj.append(vc)
             if vr not in vc.adj:
                 vc.adj.append(vr)
-        return cls(list(vertex_dictionary.values()))
+        return list(vertex_dictionary.values())
+
+    @classmethod
+    def from_csv(cls, path : str):
+
+        if not pl.Path(path).exists():
+            raise FileNotFoundError(f"File {path} does not exist.")
+        if pl.Path(path).suffix != ".csv":
+            raise ValueError(f"File {path} is not a CSV file.")
+        
+        dataframe = pd.read_csv(path)
+        rows = dataframe['row'].to_numpy()
+        cols = dataframe['col'].to_numpy()
+        values = dataframe['val'].to_numpy()
+        return cls(cls.__vertex_list_from_coo(rows, cols, values))
+
+    @classmethod
+    def from_hdf5(cls, path : str):
+
+        if not pl.Path(path).exists():
+            raise FileNotFoundError(f"File {path} does not exist.")
+        if pl.Path(path).suffix != ".hdf5":
+            raise ValueError(f"File {path} is not a HDF5 file.")
+        
+        dataframe = pd.read_hdf(path_or_buf=path, key="coo_matrix")
+        rows = dataframe['row'].to_numpy()
+        cols = dataframe['col'].to_numpy()
+        values = dataframe['val'].to_numpy()
+        return cls(cls.__vertex_list_from_coo(rows, cols, values))
 
     def vertex_list_to_adj_matrix(self, vertex_list):
+
+        if len(vertex_list) == 0:
+            return 0
+
         row = []
         col = []
         val = []
@@ -75,7 +109,8 @@ class Graph:
     def local_schur_complement(self):
         num_coarse = len(self.coarse_vertices)
         if num_coarse == 0:
-            return
+            print("Warning: no coarse vertices in graph.")
+            return 0
         sorted_vertices = sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False)
         adjacency_matrix = self.vertex_list_to_adj_matrix(sorted_vertices)
         adjacency_matrix_laplacian = laplacian(adjacency_matrix)
@@ -130,7 +165,10 @@ class UniversalGraph(Graph):
         self.set_coarse(coarse_vertices)
         return coarse_vertices
 
-    def create_subgraphs_depth(self, max_depth = 3):
+    def create_subgraphs_depth(self, max_depth = 2):
+        if depth < 1:
+            raise ValueError("Max depth must be at least 1.")
+
         for iterator, vertex in enumerate(self.coarse_vertices):
             subgraph_vertex_list = [] 
 
@@ -141,20 +179,18 @@ class UniversalGraph(Graph):
             visited.add(vertex)
             depth[vertex] = 0
             queue.append(vertex)
+
             while queue:
                 current = queue.popleft()
-                current_depth = depth[current]
-
-                if current_depth > max_depth:
-                    continue
-
                 subgraph_vertex_list.append(current)
 
                 for neighbor in current.adj:
                     if neighbor in visited:
                         continue
+                    if depth[current] + 1 > max_depth + 1:
+                        continue
                     visited.add(neighbor)
-                    depth[neighbor] = current_depth + 1
+                    depth[neighbor] = depth[current] + 1
                     queue.append(neighbor)
 
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
@@ -171,6 +207,11 @@ class GridGraph(Graph):
     @classmethod
     def from_csv(cls, path, shape):
         base = Graph.from_csv(path)
+        return cls(base.vertex_list, shape)
+
+    @classmethod
+    def from_hdf5(cls, path, shape):
+        base = Graph.from_hdf5(path)
         return cls(base.vertex_list, shape)
 
     def select_coarse_spacing(self, spacing = 1):

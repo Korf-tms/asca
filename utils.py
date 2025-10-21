@@ -59,7 +59,7 @@ def generate_grid_graph(rows, cols, filename, type="csv"):
     if type == "csv":
         dataframe.to_csv(filename, index=False)
     elif type == "hdf5":
-        dataframe.to_hdf(filename, key="adjmatrix", mode="w")
+        dataframe.to_hdf(filename, key="coo_matrix", mode="w")
 
 def clear_folder_or_create(folder_path):
     folder = pathlib.Path(folder_path)
