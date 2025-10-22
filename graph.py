@@ -9,6 +9,14 @@ import numpy as np
 import random
 
 class Vertex:
+    """
+    Vertex class
+    id : int - unique identifier of the vertex
+    adj : list - list of adjacent vertices in format (vertex, weight)
+    coarse : bool - if tis vertex is coarse
+    name : str - name of the vertex for visualization purposes
+    graph : Subgraph - subgraph that belongs to the vertex. All the subgraphs are tied to a vertex.
+    """
     def __init__(self, id):
         self.id = id
         self.adj = []
@@ -16,6 +24,9 @@ class Vertex:
         self.name = ""
         self.graph = None
     
+    def get_adj(self):
+        return [neighbor for neighbor, _ in self.adj]
+
     def __str__(self):
         return f"{self.name}Vertex: {self.id}"
     
@@ -60,13 +71,11 @@ class Graph:
 
         n = int(max(rows.max(), cols.max()) + 1)#get highest vertex index
         vertex_dictionary = {i: Vertex(i) for i in range(n)}
-        for row, col in zip(rows, cols):
-            vr = vertex_dictionary[int(row)]
-            vc = vertex_dictionary[int(col)]
-            if vc not in vr.adj:
-                vr.adj.append(vc)
-            if vr not in vc.adj:
-                vc.adj.append(vr)
+        for row, col, val in zip(rows, cols, values):
+            vertex_row = vertex_dictionary[int(row)]
+            vertex_col = vertex_dictionary[int(col)]
+            vertex_row.adj.append((vertex_col, val))
+
         return list(vertex_dictionary.values())
 
     """
@@ -116,19 +125,17 @@ class Graph:
     Creates adjacency matrix from given vertex list, the order of vertex list matters.
     """
     def vertex_list_to_adj_matrix(self, vertex_list):
-
         if len(vertex_list) == 0:
             return 0
-
         row = []
         col = []
         val = []
         mapping = {vertex: i for i, vertex in enumerate(vertex_list)}
         for vertex in vertex_list:
-            for neighbor in vertex.adj:
+            for neighbor, weight in vertex.adj:
                 row.append(mapping[vertex])
                 col.append(mapping[neighbor])
-                val.append(1)
+                val.append(weight)
 
         shape = len(vertex_list)
         temp = np.zeros((shape, shape), dtype=float)
@@ -190,7 +197,7 @@ class UniversalGraph(Graph):
         while remaining_vertices:
             current = remaining_vertices.pop()
             coarse_vertices.add(current)
-            remaining_vertices.difference_update(current.adj)
+            remaining_vertices.difference_update(current.get_adj())
         self.set_coarse(coarse_vertices)
         return coarse_vertices
 
@@ -216,7 +223,7 @@ class UniversalGraph(Graph):
                 current = queue.popleft()
                 subgraph_vertex_list.append(current)
 
-                for neighbor in current.adj:
+                for neighbor in current.get_adj():
                     if neighbor in visited:
                         continue
                     if depth[current] + 1 > max_depth + 1:
@@ -332,7 +339,8 @@ class GridGraph(Graph):
 
 class SubGraph():
     """
-    
+    Subgraph class
+    Every subgraph is tied to avertex in the main graph, that vertex acts as a origin of the subgraph.
     """
     def __init__(self, vertex_list, graph, name):
         self.name = name
@@ -340,19 +348,18 @@ class SubGraph():
         self.parent = graph
         
         original_vertex_to_subgraph_vertex = dict()
-        for i, original_vertex in enumerate(vertex_list):
+        for i, original_vertex in enumerate(vertex_list):#create subgraph vertices
             subgraph_vertex = SubgraphVertex(id= i, vertex=original_vertex) 
             original_vertex_to_subgraph_vertex[original_vertex] = subgraph_vertex
             self.vertex_list.append(subgraph_vertex)
 
         vertex_list_set = set(vertex_list)
 
-        for vertex in self.vertex_list:
-            vertex.adj.extend([original_vertex_to_subgraph_vertex[original_vertex] for original_vertex in vertex.original_vertex.adj if original_vertex in vertex_list_set])
-
+        for vertex in self.vertex_list:#populate adjacency lists for vertices
+            vertex.adj.extend([(original_vertex_to_subgraph_vertex[original_vertex], weight) for original_vertex, weight in vertex.original_vertex.adj if original_vertex in vertex_list_set])
         
-        for vertex in self.vertex_list:
-            for neighbour in vertex.adj:
+        for vertex in self.vertex_list:#populate the edge count in the parent graph, this is needed for overlapping subgraphs
+            for neighbour in vertex.get_adj():
                 key = (vertex.original_vertex.id, neighbour.original_vertex.id)
                 graph.edge_count[key] = graph.edge_count.get(key, 0) + 1
 
@@ -365,7 +372,7 @@ class SubGraph():
 
         vertex_ajd_matrix_mapping = {vertex: iterator for iterator, vertex in enumerate(self.sorted_vertex_list)}
         for vertex in self.vertex_list:
-            for neighbour in vertex.adj:
+            for neighbour in vertex.get_adj():
                 adjacency_matrix[vertex_ajd_matrix_mapping[vertex], 
                                  vertex_ajd_matrix_mapping[neighbour]] /= self.parent.edge_count[(vertex.original_vertex.id, 
                                                                                                     neighbour.original_vertex.id)]
@@ -392,10 +399,10 @@ class SubGraph():
         val = []
         mapping = {vertex: i for i, vertex in enumerate(vertex_list)}
         for vertex in vertex_list:
-            for neighbor in vertex.adj:
+            for neighbor, weight in vertex.adj:
                 row.append(mapping[vertex])
                 col.append(mapping[neighbor])
-                val.append(1)
+                val.append(weight)
 
         shape = len(vertex_list)
         temp = np.zeros((shape, shape), dtype=float)

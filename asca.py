@@ -12,9 +12,14 @@ import logging
 #logger = logging.getLogger(__name__)
 
 #logging.basicConfig(level=logging.INFO, filename=f"log/{time.strftime("%d_%m_%Y_%M_%S")}.log", format='%(asctime)s, %(levelname)s: %(message)s')
-shape = (11,11)
+
 #utils.generate_graph_to_coo_csv(shape[0], shape[1], sys.argv[1], connection_prob=1)
 
+if len(sys.argv) != 4:
+    print("Usage: python asca.py <path_to_file> <rows> <cols>")
+    sys.exit(1)
+
+shape = (sys.argv[2], sys.argv[3])
 main_graph = graph.GridGraph.from_hdf5(path=sys.argv[1], shape=shape)
 utils.clear_folder_or_create("data")
 utils.clear_folder_or_create("images")
@@ -26,7 +31,11 @@ main_graph.create_subgraphs_max(2)
 utils.visualize_graph(main_graph)
 
 Q = 0
+s = True
 for sub_graph in main_graph.get_subgraphs():
+    if s:
+        utils.visualize_graph(sub_graph)
+        s = False
     mapping = sub_graph.local_to_global_mapping().toarray()
     schur_complement = sub_graph.local_schur_complement()
     temp = mapping @ schur_complement @ mapping.T
@@ -52,6 +61,3 @@ with pd.HDFStore("data/analysis.hdf5", mode="w") as store:
 #popsat funkce
 #parametrizace
 #rekurentni schema
-#wieghted graph
-#pandas
-#hdf5
