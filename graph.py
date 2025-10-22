@@ -35,19 +35,30 @@ class SubgraphVertex(Vertex):
         self.name = "Subgraph"
 
 class Graph:
+    """
+    Base graph class
+    vertex_list : list of Vertex obejects - main representation of the graph
+    edge_count : dict - counts how many subgraphs each edge is part of
+    coarse_vertices : list - list of coarse vertices in the graph, is populated after one of the select_coarse methods is called
+    name : str - name of the graph for visualization purposes
+    """
     def __init__(self, vertex_list : list[Vertex]):
         self.vertex_list = vertex_list
         self.edge_count = dict()
         self.coarse_vertices = list()
         self.name = "Graph"
     
+
+    """
+    Creates vertex list from rows, cols, values (coo_matrix format).
+    """
     @staticmethod
     def __vertex_list_from_coo(rows, cols, values):
 
         if len(rows) != len(cols) != len(values):
             raise ValueError("Invalid COO representation")
 
-        n = int(max(rows.max(), cols.max()) + 1)
+        n = int(max(rows.max(), cols.max()) + 1)#get highest vertex index
         vertex_dictionary = {i: Vertex(i) for i in range(n)}
         for row, col in zip(rows, cols):
             vr = vertex_dictionary[int(row)]
@@ -58,6 +69,9 @@ class Graph:
                 vc.adj.append(vr)
         return list(vertex_dictionary.values())
 
+    """
+    Gets coo format from csv file in format row,col,val and creates graph from it.
+    """
     @classmethod
     def from_csv(cls, path : str):
 
@@ -72,6 +86,9 @@ class Graph:
         values = dataframe['val'].to_numpy()
         return cls(cls.__vertex_list_from_coo(rows, cols, values))
 
+    """
+    Reads hdf5 file that represents graph by either coo format djacency matrix or full adjacency matrix and creates graphfrom it.
+    """
     @classmethod
     def from_hdf5(cls, path : str):
 
@@ -80,12 +97,24 @@ class Graph:
         if pl.Path(path).suffix != ".hdf5":
             raise ValueError(f"File {path} is not a HDF5 file.")
         
-        dataframe = pd.read_hdf(path_or_buf=path, key="coo_matrix")
-        rows = dataframe['row'].to_numpy()
-        cols = dataframe['col'].to_numpy()
-        values = dataframe['val'].to_numpy()
-        return cls(cls.__vertex_list_from_coo(rows, cols, values))
+        with pd.HDFStore(path, mode="r") as store:
+            keys = set(store.keys())
+            if "/coo_matrix" in keys:
+                dataframe = store.get("coo_matrix")
+                rows = dataframe['row'].to_numpy()
+                cols = dataframe['col'].to_numpy()
+                values = dataframe['val'].to_numpy()
+                return cls(cls.__vertex_list_from_coo(rows, cols, values))
+            elif "/adj_matrix" in keys:
+                dataframe = store.get("adj_matrix")
+                adj_matrix = coo_matrix(dataframe.to_numpy())
+                return cls(cls.__vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
+            else:
+                raise ValueError(f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix' key.")                   
 
+    """
+    Creates adjacency matrix from given vertex list, the order of vertex list matters.
+    """
     def vertex_list_to_adj_matrix(self, vertex_list):
 
         if len(vertex_list) == 0:
@@ -106,6 +135,10 @@ class Graph:
         temp[row, col] = val
         return temp
 
+
+    """
+    computes the local schur complement for the graph
+    """
     def local_schur_complement(self):
         num_coarse = len(self.coarse_vertices)
         if num_coarse == 0:
@@ -121,50 +154,49 @@ class Graph:
 
         return a11 - a12 @ np.linalg.solve(a22, a21)
     
+    """
+    Sets coarse vertices and creates mapping, that is used in schur complement by the subgraphs
+    """
     def set_coarse(self, coarse_vertices):
         for vertex in coarse_vertices:
             vertex.coarse = True
         self.coarse_vertices = coarse_vertices
         self.sorted_vertex_adj_matrix_mapping = {vertex: i for i, vertex in enumerate(sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False))}
     
+    """
+    returns list of subgraphs in the graph
+    """
     def get_subgraphs(self):
         return [vertex.graph for vertex in self.vertex_list if vertex.graph != None]
 
 class UniversalGraph(Graph):
+    """
+    Generic graph
+    """
     def __init__(self, vertex_list):
         super().__init__(vertex_list)
     
+
+    """
+    Selects coarse vertices that are part of maximal independent set.
+    Maximal independent set is a set of vertices such that no two vertices are adjacent.
+    And no additional vertices can be added to the set without violating this property.
+    @return coarse_vertices - set of coarse vertices
+    """
     def select_coarse_mis(self):
         coarse_vertices = set()
         remaining_vertices = set(self.vertex_list)
         
         while remaining_vertices:
-            subset = set()
-            subset.update([vertex for vertex in remaining_vertices if random.random() < 1 / (2 * len(vertex.adj))])
-            
-            to_remove = set()
-            for vertex in subset:            
-                for neighbor in vertex.adj:
-                    if neighbor not in subset:
-                        continue
-                    if len(vertex.adj) > len(neighbor.adj):
-                        to_remove.add(neighbor)
-                    elif len(vertex.adj) < len(neighbor.adj):
-                        to_remove.add(vertex)
-                    else:
-                        if vertex.id > neighbor.id:
-                            to_remove.add(neighbor)
-                        else:
-                            to_remove.add(vertex)
-            
-            subset.difference_update(to_remove)
-            coarse_vertices.update(subset)
-            neighbors_to_remove = [neighbor for vertex in subset for neighbor in vertex.adj]
-            remaining_vertices.difference_update(subset)
-            remaining_vertices.difference_update(neighbors_to_remove)
+            current = remaining_vertices.pop()
+            coarse_vertices.add(current)
+            remaining_vertices.difference_update(current.adj)
         self.set_coarse(coarse_vertices)
         return coarse_vertices
 
+    """
+    Creates subgraphs around each coarse vertex with given depth.
+    """
     def create_subgraphs_depth(self, max_depth = 2):
         if depth < 1:
             raise ValueError("Max depth must be at least 1.")
@@ -196,6 +228,12 @@ class UniversalGraph(Graph):
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
 
 class GridGraph(Graph):
+    """
+    Grid graph
+    shape : tuple - shape of the graph grid (rows, cols)
+    vertex_matrix : np.ndarray - matrix of vertices as they are in the grid, neighbours in the matrix means neighbours in the graph
+    vertex_matrix_coords : dict - mapping of vertices to their coordinates in the vertex_matrix for easy access
+    """
     def __init__(self, vertex_list, shape : tuple[int, int]):
         super().__init__(vertex_list)
         self.shape = shape
@@ -214,6 +252,9 @@ class GridGraph(Graph):
         base = Graph.from_hdf5(path)
         return cls(base.vertex_list, shape)
 
+    """
+    
+    """
     def select_coarse_spacing(self, spacing = 1):
         coarse_vertices = set()
         visited = set()
@@ -227,6 +268,36 @@ class GridGraph(Graph):
         self.set_coarse(coarse_vertices)
         return coarse_vertices
     
+    """
+    """
+    def select_coarse_star(self, size = 1):
+        coarse_vertices = set()
+        visited = set()
+        for vertex in self.vertex_list:
+            if vertex in visited:
+                continue
+            if vertex not in coarse_vertices:
+                coarse_vertices.add(vertex)
+                adj = set([vertex])
+                for _ in range(size):
+                    adj.update(*(v.adj for v in adj))
+                visited.update(adj)
+        self.set_coarse(coarse_vertices)
+        return coarse_vertices
+
+    """
+    Selects every n-th vertice as they were inputed in vertex list.
+    """
+    def select_coarse_every_nth(self, n = 2):
+        coarse_vertices = set()
+        for iterator in range(0, len(self.vertex_list), n):
+            coarse_vertices.add(self.vertex_list[iterator])
+        self.set_coarse(coarse_vertices)
+        return coarse_vertices
+
+    """
+    Creates subgraphs around each coarse vertex with given size, includes the corner vertices not just adjacent ones.
+    """
     def create_subgraphs_around_coarse(self, size = 1):
         for iterator, vertex in enumerate(self.coarse_vertices):
 
@@ -234,6 +305,10 @@ class GridGraph(Graph):
 
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
 
+    """
+    Creates the maximum possible number of subgraphs of given size,
+    size = 1 means one vertice in each direction.
+    """
     def create_subgraphs_max(self, size = 1):
         vertex_matrix_center = self.vertex_matrix[size:-size, size:-size]
         for iterator, vertex in enumerate(vertex_matrix_center.ravel()):
@@ -242,6 +317,9 @@ class GridGraph(Graph):
 
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
 
+    """
+    Helper method that returns vertices around given vertex in square of given size.
+    """
     def get_vertices_around(self, vertex, size = 1):
         row = self.vertex_matrix_coords[vertex][0]
         col = self.vertex_matrix_coords[vertex][1]
@@ -253,6 +331,9 @@ class GridGraph(Graph):
         return self.vertex_matrix[row_start:row_end, column_start:column_end].ravel()
 
 class SubGraph():
+    """
+    
+    """
     def __init__(self, vertex_list, graph, name):
         self.name = name
         self.vertex_list =  list()

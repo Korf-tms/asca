@@ -44,10 +44,7 @@ def visualize_graph(graph, color='red'):
 
 def generate_grid_graph(rows, cols, filename, type="csv"):
     G = nx.grid_2d_graph(rows, cols)
-
-    edges = list(G.edges())
-    random.shuffle(edges)
-
+    
     A = nx.to_scipy_sparse_array(G, format="coo", dtype=int)
 
     dataframe = pd.DataFrame({

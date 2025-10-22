@@ -20,7 +20,7 @@ utils.clear_folder_or_create("data")
 utils.clear_folder_or_create("images")
 main_graph_adj_matrix = main_graph.vertex_list_to_adj_matrix(main_graph.vertex_list)
 
-main_graph.select_coarse_spacing(1)
+main_graph.select_coarse_every_nth(2)
 main_graph.create_subgraphs_max(2)
 
 utils.visualize_graph(main_graph)
@@ -35,8 +35,12 @@ for sub_graph in main_graph.get_subgraphs():
 schur = main_graph.local_schur_complement()
 schur_arr = np.array(schur, copy=True)
 q_arr = np.array(Q, copy=True)
+eigen_val_vec = ([], [])
+try:
+    eigen_val_vec = eigh(q_arr, schur_arr)
+except Exception as e:
+    print("Eigh error:", e)
 
-eigen_val_vec = eigh(q_arr, schur_arr)
 
 with pd.HDFStore("data/analysis.hdf5", mode="w") as store:
     store.put("analysis/adj_matrix", pd.DataFrame(main_graph_adj_matrix))
