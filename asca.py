@@ -1,4 +1,4 @@
-from scipy.linalg import eigh
+from scipy.linalg import eigh, eigvalsh
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,25 +9,17 @@ import graph
 import utils
 import logging
 
-#logger = logging.getLogger(__name__)
-
-#logging.basicConfig(level=logging.INFO, filename=f"log/{time.strftime("%d_%m_%Y_%M_%S")}.log", format='%(asctime)s, %(levelname)s: %(message)s')
-
-#utils.generate_graph_to_coo_csv(shape[0], shape[1], sys.argv[1], connection_prob=1)
-
 if len(sys.argv) != 4:
     print("Usage: python asca.py <path_to_file> <rows> <cols>")
     sys.exit(1)
 
-shape = (sys.argv[2], sys.argv[3])
-main_graph = graph.GridGraph.from_hdf5(path=sys.argv[1], shape=shape)
 utils.clear_folder_or_create("data")
 utils.clear_folder_or_create("images")
-main_graph_adj_matrix = main_graph.vertex_list_to_adj_matrix(main_graph.vertex_list)
 
-main_graph.select_coarse_every_nth(2)
-main_graph.create_subgraphs_max(2)
-
+shape = (int(sys.argv[2]), int(sys.argv[3]))
+main_graph = graph.GridGraph.from_hdf5(path=sys.argv[1], shape=shape)
+main_graph.select_coarse_spacing(1)
+main_graph.create_subgraphs_max(1)
 utils.visualize_graph(main_graph)
 
 Q = 0
@@ -44,18 +36,24 @@ for sub_graph in main_graph.get_subgraphs():
 schur = main_graph.local_schur_complement()
 schur_arr = np.array(schur, copy=True)
 q_arr = np.array(Q, copy=True)
-eigen_val_vec = ([], [])
-try:
-    eigen_val_vec = eigh(q_arr, schur_arr)
-except Exception as e:
-    print("Eigh error:", e)
-
+main_graph_adj_matrix = main_graph.vertex_list_to_adj_matrix(main_graph.vertex_list)
 
 with pd.HDFStore("data/analysis.hdf5", mode="w") as store:
     store.put("analysis/adj_matrix", pd.DataFrame(main_graph_adj_matrix))
     store.put("analysis/asca", pd.DataFrame(q_arr))
     store.put("analysis/schur_complement", pd.DataFrame(schur_arr))
-    store.put("analysis/eigen_vals", pd.DataFrame(eigen_val_vec[0]))
+    try:
+        store.put("analysis/eigen_vals", pd.DataFrame(eigh(schur_arr, q_arr)[0]))
+    except Exception as e:
+        print("Eigh error:", e)
+    try:
+        store.put("analysis/eigen_vals_asca", pd.DataFrame(eigvalsh(q_arr)))
+    except Exception as e:
+        print("Eigvalsh error:", e)
+    try:
+        store.put("analysis/eigen_vals_schur", pd.DataFrame(np.linalg.eig(schur_arr)[0]))
+    except Exception as e:
+        print("Eigvalsh error:", e)
 
 #psat
 #popsat funkce

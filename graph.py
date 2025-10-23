@@ -6,8 +6,6 @@ import pathlib as pl
 import pandas as pd
 import numpy as np
 
-import random
-
 class Vertex:
     """
     Vertex class
@@ -55,8 +53,6 @@ class Graph:
     """
     def __init__(self, vertex_list : list[Vertex]):
         self.vertex_list = vertex_list
-        self.edge_count = dict()
-        self.coarse_vertices = list()
         self.name = "Graph"
     
 
@@ -146,21 +142,24 @@ class Graph:
     """
     computes the local schur complement for the graph
     """
-    def local_schur_complement(self):
-        num_coarse = len(self.coarse_vertices)
+    def schur_complement(self, num_coarse, adjacency_matrix):
         if num_coarse == 0:
             print("Warning: no coarse vertices in graph.")
             return 0
-        sorted_vertices = sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False)
-        adjacency_matrix = self.vertex_list_to_adj_matrix(sorted_vertices)
+        
         adjacency_matrix_laplacian = laplacian(adjacency_matrix)
         a11 = adjacency_matrix_laplacian[0:num_coarse, 0:num_coarse]
         a22 = adjacency_matrix_laplacian[num_coarse:, num_coarse:]
         a21 = adjacency_matrix_laplacian[num_coarse:, 0:num_coarse]
         a12 = adjacency_matrix_laplacian[0:num_coarse, num_coarse:]
 
-        return a11 - a12 @ np.linalg.solve(a22, a21)
+        return a11 - (a12 @ np.linalg.inv(a22) @ a21)
     
+    def local_schur_complement(self):
+        sorted_vertices = sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False)
+        adjacency_matrix = self.vertex_list_to_adj_matrix(sorted_vertices)
+        return self.schur_complement(len(self.coarse_vertices), adjacency_matrix)
+
     """
     Sets coarse vertices and creates mapping, that is used in schur complement by the subgraphs
     """
@@ -182,6 +181,8 @@ class UniversalGraph(Graph):
     """
     def __init__(self, vertex_list):
         super().__init__(vertex_list)
+        self.edge_count = dict()
+        self.coarse_vertices = list()
     
 
     """
@@ -243,6 +244,8 @@ class GridGraph(Graph):
     """
     def __init__(self, vertex_list, shape : tuple[int, int]):
         super().__init__(vertex_list)
+        self.edge_count = dict()
+        self.coarse_vertices = list()
         self.shape = shape
         self.vertex_matrix = np.array(vertex_list).reshape(shape)
         self.vertex_matrix_coords = dict()
@@ -335,18 +338,18 @@ class GridGraph(Graph):
         row_end   = min(self.shape[0], row + size + 1)
         column_start = max(0, col - size)
         column_end = min(self.shape[1], col + size + 1)
-        return self.vertex_matrix[row_start:row_end, column_start:column_end].ravel()
+        return list(self.vertex_matrix[row_start:row_end, column_start:column_end].ravel())
 
-class SubGraph():
+class SubGraph(Graph):
     """
     Subgraph class
-    Every subgraph is tied to avertex in the main graph, that vertex acts as a origin of the subgraph.
+    Every subgraph is tied to a vertex in the main graph, that vertex acts as a origin of the subgraph.
     """
     def __init__(self, vertex_list, graph, name):
+        self.vertex_list = list()
         self.name = name
-        self.vertex_list =  list()
         self.parent = graph
-        
+
         original_vertex_to_subgraph_vertex = dict()
         for i, original_vertex in enumerate(vertex_list):#create subgraph vertices
             subgraph_vertex = SubgraphVertex(id= i, vertex=original_vertex) 
@@ -357,7 +360,7 @@ class SubGraph():
 
         for vertex in self.vertex_list:#populate adjacency lists for vertices
             vertex.adj.extend([(original_vertex_to_subgraph_vertex[original_vertex], weight) for original_vertex, weight in vertex.original_vertex.adj if original_vertex in vertex_list_set])
-        
+
         for vertex in self.vertex_list:#populate the edge count in the parent graph, this is needed for overlapping subgraphs
             for neighbour in vertex.get_adj():
                 key = (vertex.original_vertex.id, neighbour.original_vertex.id)
@@ -376,35 +379,16 @@ class SubGraph():
                 adjacency_matrix[vertex_ajd_matrix_mapping[vertex], 
                                  vertex_ajd_matrix_mapping[neighbour]] /= self.parent.edge_count[(vertex.original_vertex.id, 
                                                                                                     neighbour.original_vertex.id)]
-        adjacency_matrix_laplacian = laplacian(adjacency_matrix)
-        a11 = adjacency_matrix_laplacian[0:self.num_coarse, 0:self.num_coarse]
-        a22 = adjacency_matrix_laplacian[self.num_coarse:, self.num_coarse:]
-        a21 = adjacency_matrix_laplacian[self.num_coarse:, 0:self.num_coarse]
-        a12 = adjacency_matrix_laplacian[0:self.num_coarse, self.num_coarse:]
-        temp = a11 - a12 @ np.linalg.solve(a22, a21)
-        return temp
+        return self.schur_complement(self.num_coarse, adjacency_matrix)
     
     def local_to_global_mapping(self):
-        #row is true global vertex
-        #column is local coarse
-        local_to_global_mapping_matrix = np.zeros((len(self.parent.coarse_vertices), self.num_coarse))
+        local_to_global_mapping_matrix = np.zeros((len(self.parent.coarse_vertices), self.num_coarse))#mapping matrix
         coarse = sorted([x for x in self.vertex_list if x.original_vertex.coarse], key=lambda vertex: vertex.id)
-        for i, vertex in enumerate(coarse):
-            local_to_global_mapping_matrix[self.parent.sorted_vertex_adj_matrix_mapping[vertex.original_vertex]][i] = 1
-        return coo_matrix(local_to_global_mapping_matrix)
-    
-    def vertex_list_to_adj_matrix(self, vertex_list):
-        row = []
-        col = []
-        val = []
-        mapping = {vertex: i for i, vertex in enumerate(vertex_list)}
-        for vertex in vertex_list:
-            for neighbor, weight in vertex.adj:
-                row.append(mapping[vertex])
-                col.append(mapping[neighbor])
-                val.append(weight)
+        """
+        sort by id so that we can use iterator as reference to the local vertex
+        we only need coarse vertice since fine get eliminated in schur complement
+        """
+        for iterator, vertex in enumerate(coarse):
+            local_to_global_mapping_matrix[self.parent.sorted_vertex_adj_matrix_mapping[vertex.original_vertex]][iterator] = 1
 
-        shape = len(vertex_list)
-        temp = np.zeros((shape, shape), dtype=float)
-        temp[row, col] = val
-        return temp
+        return coo_matrix(local_to_global_mapping_matrix)
