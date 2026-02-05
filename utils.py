@@ -4,8 +4,11 @@ import random
 import numpy as np
 import pandas as pd
 import pathlib
+import time
+import graphviz
 
-def visualize_graph(graph, color='red'):
+
+def visualize_graph(graph, color='red', name="default"):
     G_nx = nx.Graph()
     colors = []
     for vertex in graph.vertex_list:
@@ -34,13 +37,21 @@ def visualize_graph(graph, color='red'):
             v = vertex_v.id
         if u != v:
             G_nx.add_edge(u, v)
-
+    
     pos = nx.kamada_kawai_layout(G_nx)
     plt.figure(figsize=(8, 6))
     nx.draw(G_nx, pos, with_labels=True, node_color=colors, node_size=500, font_weight='bold')
     plt.title("Graph")
-    plt.savefig(f"images/{graph.name}.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"images/{name}.png", dpi=300, bbox_inches='tight')
     plt.close()
+
+def visualize_graph_2(graph, name):
+    g = graphviz.Graph(name=name, format='png') 
+    for vertex in graph.vertex_list:
+        g.node(f"{vertex.id}")
+        for neighbour, weight in vertex.adj:
+            g.edge(f"{vertex.id}", f"{neighbour.id}", f"{weight}")
+    g.render(format='png')
 
 def generate_grid_graph(rows, cols, filename, type="csv"):
     G = nx.grid_2d_graph(rows, cols)

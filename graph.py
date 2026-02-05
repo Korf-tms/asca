@@ -5,6 +5,9 @@ from scipy.sparse import coo_matrix
 import pathlib as pl
 import pandas as pd
 import numpy as np
+from collections import Counter
+
+import time
 
 class Vertex:
     """
@@ -60,7 +63,7 @@ class Graph:
     Creates vertex list from rows, cols, values (coo_matrix format).
     """
     @staticmethod
-    def __vertex_list_from_coo(rows, cols, values):
+    def vertex_list_from_coo(rows, cols, values):
 
         if len(rows) != len(cols) != len(values):
             raise ValueError("Invalid COO representation")
@@ -89,7 +92,7 @@ class Graph:
         rows = dataframe['row'].to_numpy()
         cols = dataframe['col'].to_numpy()
         values = dataframe['val'].to_numpy()
-        return cls(cls.__vertex_list_from_coo(rows, cols, values))
+        return cls(cls.vertex_list_from_coo(rows, cols, values))
 
     """
     Reads hdf5 file that represents graph by either coo format djacency matrix or full adjacency matrix and creates graphfrom it.
@@ -108,35 +111,42 @@ class Graph:
                 dataframe = store.get("coo_matrix")
                 rows = dataframe['row'].to_numpy()
                 cols = dataframe['col'].to_numpy()
-                values = dataframe['val'].to_numpy()
-                return cls(cls.__vertex_list_from_coo(rows, cols, values))
+                values = dataframe['val'].to_numpy(dtype=np.float64)
+                return cls(cls.vertex_list_from_coo(rows, cols, values))
             elif "/adj_matrix" in keys:
                 dataframe = store.get("adj_matrix")
                 adj_matrix = coo_matrix(dataframe.to_numpy())
-                return cls(cls.__vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
+                return cls(cls.vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
             else:
-                raise ValueError(f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix' key.")                   
+                raise ValueError(f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix' key.")              
+                 
+    @classmethod
+    def from_coo(cls, adj_matrix : coo_matrix):
+        return cls(cls.vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
 
     """
     Creates adjacency matrix from given vertex list, the order of vertex list matters.
     """
     def vertex_list_to_adj_matrix(self, vertex_list):
-        if len(vertex_list) == 0:
+        if not vertex_list:
             return 0
+
+        mapping = {v: i for i, v in enumerate(vertex_list)}
+
+        # Collect all edges using list comprehensions
         row = []
         col = []
         val = []
-        mapping = {vertex: i for i, vertex in enumerate(vertex_list)}
-        for vertex in vertex_list:
-            for neighbor, weight in vertex.adj:
-                row.append(mapping[vertex])
-                col.append(mapping[neighbor])
-                val.append(weight)
-
+        for v in vertex_list:
+            i = mapping[v]
+            row.extend([i] * len(v.adj))
+            col.extend(mapping[n] for n, _ in v.adj)
+            val.extend(w for _, w in v.adj)
+        # Build matrix
         shape = len(vertex_list)
-        temp = np.zeros((shape, shape), dtype=float)
-        temp[row, col] = val
-        return temp
+        mat = np.zeros((shape, shape), dtype=np.float64)
+        mat[row, col] = val
+        return mat
 
 
     """
@@ -147,7 +157,7 @@ class Graph:
             print("Warning: no coarse vertices in graph.")
             return 0
         
-        adjacency_matrix_laplacian = laplacian(adjacency_matrix)
+        adjacency_matrix_laplacian = laplacian(adjacency_matrix, dtype=np.float64)
         a11 = adjacency_matrix_laplacian[0:num_coarse, 0:num_coarse]
         a22 = adjacency_matrix_laplacian[num_coarse:, num_coarse:]
         a21 = adjacency_matrix_laplacian[num_coarse:, 0:num_coarse]
@@ -174,17 +184,7 @@ class Graph:
     """
     def get_subgraphs(self):
         return [vertex.graph for vertex in self.vertex_list if vertex.graph != None]
-
-class UniversalGraph(Graph):
-    """
-    Generic graph
-    """
-    def __init__(self, vertex_list):
-        super().__init__(vertex_list)
-        self.edge_count = dict()
-        self.coarse_vertices = list()
     
-
     """
     Selects coarse vertices that are part of maximal independent set.
     Maximal independent set is a set of vertices such that no two vertices are adjacent.
@@ -206,7 +206,7 @@ class UniversalGraph(Graph):
     Creates subgraphs around each coarse vertex with given depth.
     """
     def create_subgraphs_depth(self, max_depth = 2):
-        if depth < 1:
+        if max_depth < 1:
             raise ValueError("Max depth must be at least 1.")
 
         for iterator, vertex in enumerate(self.coarse_vertices):
@@ -235,37 +235,43 @@ class UniversalGraph(Graph):
 
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
 
-class GridGraph(Graph):
+class UniversalGraph(Graph):
     """
-    Grid graph
-    shape : tuple - shape of the graph grid (rows, cols)
-    vertex_matrix : np.ndarray - matrix of vertices as they are in the grid, neighbours in the matrix means neighbours in the graph
-    vertex_matrix_coords : dict - mapping of vertices to their coordinates in the vertex_matrix for easy access
+    Generic graph
     """
-    def __init__(self, vertex_list, shape : tuple[int, int]):
+    def __init__(self, vertex_list):
         super().__init__(vertex_list)
         self.edge_count = dict()
         self.coarse_vertices = list()
-        self.shape = shape
-        self.vertex_matrix = np.array(vertex_list).reshape(shape)
-        self.vertex_matrix_coords = dict()
-        for row, col in np.ndindex(shape):
-            self.vertex_matrix_coords[self.vertex_matrix[row, col]] = (row, col)
+
+class GridGraph(Graph):
+    """
+    Grid graph
+    """
+    def __init__(self, vertex_list):
+        super().__init__(vertex_list)
+        self.edge_count = dict()
+        self.coarse_vertices = list()
 
     @classmethod
-    def from_csv(cls, path, shape):
+    def from_csv(cls, path):
         base = Graph.from_csv(path)
-        return cls(base.vertex_list, shape)
+        return cls(base.vertex_list)
 
     @classmethod
-    def from_hdf5(cls, path, shape):
+    def from_hdf5(cls, path):
         base = Graph.from_hdf5(path)
-        return cls(base.vertex_list, shape)
+        return cls(base.vertex_list)
+    
+    @classmethod
+    def from_coo(cls, adj_matrix : coo_matrix):
+        base = Graph.from_coo(adj_matrix)
+        return cls(base.vertex_list)
 
     """
     
     """
-    def select_coarse_spacing(self, spacing = 1):
+    def select_coarse_moore_neighborhood(self, spacing = 1):
         coarse_vertices = set()
         visited = set()
         for vertex in self.vertex_list:
@@ -273,14 +279,14 @@ class GridGraph(Graph):
                 continue
             if vertex not in coarse_vertices:
                 coarse_vertices.add(vertex)
-                visited.update(self.get_vertices_around(vertex, spacing))
+                visited.update(self.get_moore_neighborhood(vertex, spacing))
 
         self.set_coarse(coarse_vertices)
         return coarse_vertices
     
     """
     """
-    def select_coarse_star(self, size = 1):
+    def select_coarse_neighborhood(self, size = 1):
         coarse_vertices = set()
         visited = set()
         for vertex in self.vertex_list:
@@ -290,7 +296,7 @@ class GridGraph(Graph):
                 coarse_vertices.add(vertex)
                 adj = set([vertex])
                 for _ in range(size):
-                    adj.update(*(v.adj for v in adj))
+                    adj.update(*(v.get_adj() for v in adj))
                 visited.update(adj)
         self.set_coarse(coarse_vertices)
         return coarse_vertices
@@ -306,39 +312,57 @@ class GridGraph(Graph):
         return coarse_vertices
 
     """
-    Creates subgraphs around each coarse vertex with given size, includes the corner vertices not just adjacent ones.
-    """
-    def create_subgraphs_around_coarse(self, size = 1):
-        for iterator, vertex in enumerate(self.coarse_vertices):
-
-            subgraph_vertex_list = self.get_vertices_around(vertex, size)
-
-            vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
-
-    """
-    Creates the maximum possible number of subgraphs of given size,
+    Creates the maximum possible number of subgraphs,
     size = 1 means one vertice in each direction.
     """
-    def create_subgraphs_max(self, size = 1):
-        vertex_matrix_center = self.vertex_matrix[size:-size, size:-size]
-        for iterator, vertex in enumerate(vertex_matrix_center.ravel()):
+    def create_subgraphs_all(self, size = 1):
 
-            subgraph_vertex_list = self.get_vertices_around(vertex, size)
+        for iterator, vertex in enumerate(self.vertex_list):
+
+            subgraph_vertex_list = self.get_moore_neighborhood(vertex, size)
+
+            #graphs with less that 3 coarse vertices are not useful
+            if len([vertex for vertex in subgraph_vertex_list if vertex.coarse]) < 3:
+                continue
 
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
 
     """
     Helper method that returns vertices around given vertex in square of given size.
     """
-    def get_vertices_around(self, vertex, size = 1):
-        row = self.vertex_matrix_coords[vertex][0]
-        col = self.vertex_matrix_coords[vertex][1]
+    def get_moore_neighborhood(self, vertex, size = 1):
+        selected_vertices = set()
+        selected_vertices.add(vertex)
+        current_layer = set(vertex.get_adj())
+        for i in range(size):
 
-        row_start = max(0, row - size)
-        row_end   = min(self.shape[0], row + size + 1)
-        column_start = max(0, col - size)
-        column_end = min(self.shape[1], col + size + 1)
-        return list(self.vertex_matrix[row_start:row_end, column_start:column_end].ravel())
+            #find all neighbours of loop for finding the corners
+            neighbours = []
+            for neighbour in current_layer:
+                neighbours.extend(neighbour.get_adj())
+
+            #find all vertices that are adjacent to at least one neighbour meaning the corners
+            counts = {}
+            for item in neighbours:
+                if item in selected_vertices:
+                    continue
+                counts[item] = counts.get(item, 0) + 1
+            corners = {key for key in counts.keys() if counts[key] > 1 and key != vertex}
+
+            current_layer.update(corners)
+
+            selected_vertices.update(current_layer)
+
+            if i == size - 1:
+                break
+
+            new_layer = set()
+            for neighbour in current_layer:
+                new_layer.update(neighbour.get_adj())
+
+            current_layer = new_layer
+            
+        return selected_vertices
 
 class SubGraph(Graph):
     """
@@ -369,7 +393,6 @@ class SubGraph(Graph):
         self.num_coarse = sum(1 for vertex in self.vertex_list if vertex.original_vertex.coarse)
         self.sorted_vertex_list = sorted(self.vertex_list, key=lambda vertex: (not vertex.original_vertex.coarse, vertex.id), reverse=False)
     
-
     def local_schur_complement(self):
         adjacency_matrix = self.vertex_list_to_adj_matrix(self.sorted_vertex_list)
 
@@ -383,12 +406,9 @@ class SubGraph(Graph):
     
     def local_to_global_mapping(self):
         local_to_global_mapping_matrix = np.zeros((len(self.parent.coarse_vertices), self.num_coarse))#mapping matrix
-        coarse = sorted([x for x in self.vertex_list if x.original_vertex.coarse], key=lambda vertex: vertex.id)
-        """
-        sort by id so that we can use iterator as reference to the local vertex
-        we only need coarse vertice since fine get eliminated in schur complement
-        """
+        coarse = [x for x in self.vertex_list if x.original_vertex.coarse]
+        
         for iterator, vertex in enumerate(coarse):
             local_to_global_mapping_matrix[self.parent.sorted_vertex_adj_matrix_mapping[vertex.original_vertex]][iterator] = 1
 
-        return coo_matrix(local_to_global_mapping_matrix)
+        return local_to_global_mapping_matrix
