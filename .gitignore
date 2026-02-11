@@ -8,3 +8,5 @@
 /__*/
 !schema.png
 test.py
+*.mat
+*.prof

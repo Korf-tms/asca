@@ -12,16 +12,10 @@ def visualize_graph(graph, color='red', name="default"):
     G_nx = nx.Graph()
     colors = []
     for vertex in graph.vertex_list:
-        try:
-            colors.append("red" if vertex.original_vertex.coarse else "blue")
-        except AttributeError:
-            colors.append("red" if vertex.coarse else "blue")
+        colors.append("red" if vertex.coarse else "blue")
 
     for vertex in graph.vertex_list:
-        try:
-            G_nx.add_node(vertex.original_vertex.id)
-        except AttributeError:
-            G_nx.add_node(vertex.id)
+        G_nx.add_node(vertex.id)
 
     adj_matrix = graph.vertex_list_to_adj_matrix(graph.vertex_list)
 
@@ -29,12 +23,8 @@ def visualize_graph(graph, color='red', name="default"):
     for u_idx, v_idx in zip(u_indices, v_indices):
         vertex_u = list(graph.vertex_list)[u_idx]
         vertex_v = list(graph.vertex_list)[v_idx]
-        try:
-            u = vertex_u.original_vertex.id
-            v = vertex_v.original_vertex.id
-        except AttributeError:
-            u = vertex_u.id
-            v = vertex_v.id
+        u = vertex_u.id
+        v = vertex_v.id
         if u != v:
             G_nx.add_edge(u, v)
     

@@ -1,6 +1,7 @@
 from scipy.sparse.csgraph import laplacian
 from collections import deque
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, csr_matrix
+
 
 import pathlib as pl
 import pandas as pd
@@ -35,16 +36,10 @@ class Vertex:
         return f"{self.name}Vertex: {self.id}"
 
     def __hash__(self):
-        return hash(self.id)
+        return self.id
     
     def __eq__(self, other):
         return isinstance(other, Vertex) and self.id == other.id
-
-class SubgraphVertex(Vertex):
-    def __init__(self, id: int, vertex : Vertex):
-        super().__init__(id)
-        self.original_vertex = vertex
-        self.name = "Subgraph"
 
 class Graph:
     """
@@ -127,9 +122,11 @@ class Graph:
     """
     Creates adjacency matrix from given vertex list, the order of vertex list matters.
     """
-    def vertex_list_to_adj_matrix(self, vertex_list):
+    def vertex_list_to_adj_matrix(self, vertex_list):#need to separate methods for subgraf and main graph!!
         if not vertex_list:
             return 0
+
+        neighbtor_set = set(vertex_list)
 
         mapping = {v: i for i, v in enumerate(vertex_list)}
 
@@ -137,11 +134,14 @@ class Graph:
         row = []
         col = []
         val = []
-        for v in vertex_list:
-            i = mapping[v]
-            row.extend([i] * len(v.adj))
-            col.extend(mapping[n] for n, _ in v.adj)
-            val.extend(w for _, w in v.adj)
+        for vertex in vertex_list:
+            id = mapping[vertex]
+            for neighbor, weight in vertex.adj:
+                if neighbor not in neighbtor_set:
+                    continue
+                row.append(id)
+                col.append(mapping[neighbor])
+                val.append(weight)
         # Build matrix
         shape = len(vertex_list)
         mat = np.zeros((shape, shape), dtype=np.float64)
@@ -154,8 +154,7 @@ class Graph:
     """
     def schur_complement(self, num_coarse, adjacency_matrix):
         if num_coarse == 0:
-            print("Warning: no coarse vertices in graph.")
-            return 0
+            raise ValueError("Number of coarse vertices must be greater than 0.")
         
         adjacency_matrix_laplacian = laplacian(adjacency_matrix, dtype=np.float64)
         a11 = adjacency_matrix_laplacian[0:num_coarse, 0:num_coarse]
@@ -164,9 +163,10 @@ class Graph:
         a12 = adjacency_matrix_laplacian[0:num_coarse, num_coarse:]
 
         return a11 - (a12 @ np.linalg.inv(a22) @ a21)
+        #return a11 - a12 @ np.linalg.solve(a22, a21)
     
     def local_schur_complement(self):
-        sorted_vertices = sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False)
+        sorted_vertices = sorted(self.vertex_list, key=self.vertice_sort, reverse=False)
         adjacency_matrix = self.vertex_list_to_adj_matrix(sorted_vertices)
         return self.schur_complement(len(self.coarse_vertices), adjacency_matrix)
 
@@ -177,8 +177,12 @@ class Graph:
         for vertex in coarse_vertices:
             vertex.coarse = True
         self.coarse_vertices = coarse_vertices
-        self.sorted_vertex_adj_matrix_mapping = {vertex: i for i, vertex in enumerate(sorted(self.vertex_list, key=lambda x: (not x.coarse, x.id), reverse=False))}
+        self.coarse_vertices_count = len(coarse_vertices)
+        self.sorted_vertex_adj_matrix_mapping = {vertex: i for i, vertex in enumerate(sorted(self.vertex_list, key=self.vertice_sort, reverse=False))}
     
+    def vertice_sort(self, vertex):
+        return (not vertex.coarse, vertex.id)
+
     """
     returns list of subgraphs in the graph
     """
@@ -210,30 +214,11 @@ class Graph:
             raise ValueError("Max depth must be at least 1.")
 
         for iterator, vertex in enumerate(self.coarse_vertices):
-            subgraph_vertex_list = [] 
+            adj = set([vertex])
+            for _ in range(max_depth):
+                adj.update(*(v.get_adj() for v in adj))
 
-            visited = set()
-            depth = {}
-            queue = deque()
-
-            visited.add(vertex)
-            depth[vertex] = 0
-            queue.append(vertex)
-
-            while queue:
-                current = queue.popleft()
-                subgraph_vertex_list.append(current)
-
-                for neighbor in current.get_adj():
-                    if neighbor in visited:
-                        continue
-                    if depth[current] + 1 > max_depth + 1:
-                        continue
-                    visited.add(neighbor)
-                    depth[neighbor] = depth[current] + 1
-                    queue.append(neighbor)
-
-            vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
+            vertex.graph = SubGraph(vertex_list=list(adj), graph=self, name=f"SubGraph{iterator}")
 
 class UniversalGraph(Graph):
     """
@@ -272,33 +257,19 @@ class GridGraph(Graph):
     
     """
     def select_coarse_moore_neighborhood(self, spacing = 1):
+        start_time = time.time()
         coarse_vertices = set()
         visited = set()
+        
         for vertex in self.vertex_list:
             if vertex in visited:
                 continue
-            if vertex not in coarse_vertices:
-                coarse_vertices.add(vertex)
-                visited.update(self.get_moore_neighborhood(vertex, spacing))
-
+            
+            coarse_vertices.add(vertex)
+            visited.update(self.get_moore_neighborhood(vertex, spacing))
+                
         self.set_coarse(coarse_vertices)
-        return coarse_vertices
-    
-    """
-    """
-    def select_coarse_neighborhood(self, size = 1):
-        coarse_vertices = set()
-        visited = set()
-        for vertex in self.vertex_list:
-            if vertex in visited:
-                continue
-            if vertex not in coarse_vertices:
-                coarse_vertices.add(vertex)
-                adj = set([vertex])
-                for _ in range(size):
-                    adj.update(*(v.get_adj() for v in adj))
-                visited.update(adj)
-        self.set_coarse(coarse_vertices)
+        print(f"Coarse vertex selection took {time.time() - start_time} seconds.")
         return coarse_vertices
 
     """
@@ -310,16 +281,26 @@ class GridGraph(Graph):
             coarse_vertices.add(self.vertex_list[iterator])
         self.set_coarse(coarse_vertices)
         return coarse_vertices
-
+    """
+    Creates subgraphs around each coarse vertex with given depth.
+    """
+    def create_subgraphs_moore_neighborhood_around_coarse(self, size=1):
+        for iterator, vertex in enumerate(self.coarse_vertices):
+            subgraph_vertex_list = self.get_moore_neighborhood(vertex, size)
+            vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
     """
     Creates the maximum possible number of subgraphs,
     size = 1 means one vertice in each direction.
     """
-    def create_subgraphs_all(self, size = 1):
+    def create_subgraphs_moore_neighborhood_all(self, size = 1):
 
         for iterator, vertex in enumerate(self.vertex_list):
 
-            subgraph_vertex_list = self.get_moore_neighborhood(vertex, size)
+            degree = len(vertex.get_adj())
+            if degree <= 4:
+                subgraph_vertex_list = self.get_moore_neighborhood(vertex, size)
+            else:
+                subgraph_vertex_list = self.get_neighborhood(vertex, size)
 
             #graphs with less that 3 coarse vertices are not useful
             if len([vertex for vertex in subgraph_vertex_list if vertex.coarse]) < 3:
@@ -370,45 +351,47 @@ class SubGraph(Graph):
     Every subgraph is tied to a vertex in the main graph, that vertex acts as a origin of the subgraph.
     """
     def __init__(self, vertex_list, graph, name):
-        self.vertex_list = list()
+        self.vertex_list = vertex_list
         self.name = name
         self.parent = graph
 
-        original_vertex_to_subgraph_vertex = dict()
-        for i, original_vertex in enumerate(vertex_list):#create subgraph vertices
-            subgraph_vertex = SubgraphVertex(id= i, vertex=original_vertex) 
-            original_vertex_to_subgraph_vertex[original_vertex] = subgraph_vertex
-            self.vertex_list.append(subgraph_vertex)
-
-        vertex_list_set = set(vertex_list)
-
-        for vertex in self.vertex_list:#populate adjacency lists for vertices
-            vertex.adj.extend([(original_vertex_to_subgraph_vertex[original_vertex], weight) for original_vertex, weight in vertex.original_vertex.adj if original_vertex in vertex_list_set])
-
-        for vertex in self.vertex_list:#populate the edge count in the parent graph, this is needed for overlapping subgraphs
+        #populate the edge count in the parent graph, this is needed for overlapping subgraphs
+        for vertex in vertex_list:
             for neighbour in vertex.get_adj():
-                key = (vertex.original_vertex.id, neighbour.original_vertex.id)
+                if neighbour not in vertex_list:
+                    continue
+                key = (vertex.id, neighbour.id)
                 graph.edge_count[key] = graph.edge_count.get(key, 0) + 1
 
-        self.num_coarse = sum(1 for vertex in self.vertex_list if vertex.original_vertex.coarse)
-        self.sorted_vertex_list = sorted(self.vertex_list, key=lambda vertex: (not vertex.original_vertex.coarse, vertex.id), reverse=False)
+        #each subgraph has different coarse vertice count, but we already iterate through the vertex list before creation so we could count the coarse vertices there
+        self.coarse_vertices_count = len([vertex for vertex in vertex_list if vertex.coarse])
     
     def local_schur_complement(self):
-        adjacency_matrix = self.vertex_list_to_adj_matrix(self.sorted_vertex_list)
+        #needed
+        sorted_vertex_list = sorted(self.vertex_list, key=self.parent.vertice_sort, reverse=False)
+        #needed
+        adjacency_matrix = self.vertex_list_to_adj_matrix(sorted_vertex_list)
 
-        vertex_ajd_matrix_mapping = {vertex: iterator for iterator, vertex in enumerate(self.sorted_vertex_list)}
+        #should change the weights before creating adjacency mattrix, find better way to do it
+        vertex_set = set(self.vertex_list)
+        vertex_ajd_matrix_mapping = {vertex: iterator for iterator, vertex in enumerate(sorted_vertex_list)}
         for vertex in self.vertex_list:
             for neighbour in vertex.get_adj():
+                if neighbour not in vertex_set:
+                    continue
                 adjacency_matrix[vertex_ajd_matrix_mapping[vertex], 
-                                 vertex_ajd_matrix_mapping[neighbour]] /= self.parent.edge_count[(vertex.original_vertex.id, 
-                                                                                                    neighbour.original_vertex.id)]
-        return self.schur_complement(self.num_coarse, adjacency_matrix)
+                                 vertex_ajd_matrix_mapping[neighbour]] /= self.parent.edge_count[(vertex.id, 
+                                                                                                    neighbour.id)]
+        #needed
+        return self.schur_complement(self.coarse_vertices_count, adjacency_matrix)
     
     def local_to_global_mapping(self):
-        local_to_global_mapping_matrix = np.zeros((len(self.parent.coarse_vertices), self.num_coarse))#mapping matrix
-        coarse = [x for x in self.vertex_list if x.original_vertex.coarse]
+        #could try to use sparse matrices like coo
+        local_to_global_mapping_matrix = np.zeros((self.parent.coarse_vertices_count, self.coarse_vertices_count))
+        coarse = self.vertex_list[:self.coarse_vertices_count]
         
+        mapping = self.parent.sorted_vertex_adj_matrix_mapping
         for iterator, vertex in enumerate(coarse):
-            local_to_global_mapping_matrix[self.parent.sorted_vertex_adj_matrix_mapping[vertex.original_vertex]][iterator] = 1
+            local_to_global_mapping_matrix[mapping[vertex]][iterator] = 1
 
         return local_to_global_mapping_matrix

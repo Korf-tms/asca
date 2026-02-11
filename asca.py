@@ -20,11 +20,11 @@ class Asca:
     
     def solve_asca(self):
         # currently set for grid structures
-        print(f"ASCA Iteration {self.current_iteration}")
+        print(f"ASCA Iteration {self.current_iteration}\ncurrent size: {len(self.current_graph.vertex_list)}")
         # selecting coarse vertices
         self.current_graph.select_coarse_moore_neighborhood(1)
         # creating subgraphs
-        self.current_graph.create_subgraphs_all(1)
+        self.current_graph.create_subgraphs_moore_neighborhood_around_coarse(2)
         #utils.visualize_graph(self.current_graph, name=f"Graph{self.current_iteration}")
         
         # initialize approximation matrix
@@ -34,11 +34,10 @@ class Asca:
         s = True
         
         for sub_graph in self.current_graph.get_subgraphs():
-            print(f"Solving subgraph {sub_graph.name} with {len(sub_graph.vertex_list)} vertices")
             if s:
                 utils.visualize_graph(sub_graph, name=f"Subgraph{self.current_iteration}")
                 s = False
-
+            #should chnage all calculations to work with scipy sparse matrices, should use csr
             mapping = sub_graph.local_to_global_mapping()
             schur_complement = sub_graph.local_schur_complement()
             temp = mapping @ schur_complement @ mapping.T
