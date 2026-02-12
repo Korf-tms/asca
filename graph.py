@@ -1,14 +1,14 @@
 from scipy.sparse.csgraph import laplacian
 from collections import deque
 from scipy.sparse import coo_matrix, csr_matrix
+from collections import Counter, defaultdict
+from joblib import Parallel, delayed
 
 
 import pathlib as pl
 import pandas as pd
 import numpy as np
-from collections import Counter
-
-import time
+import scipy.io as spio
 
 class Vertex:
     """
@@ -51,6 +51,7 @@ class Graph:
     """
     def __init__(self, vertex_list : list[Vertex]):
         self.vertex_list = vertex_list
+        self.edge_count = Counter()
         self.name = "Graph"
     
 
@@ -63,7 +64,7 @@ class Graph:
         if len(rows) != len(cols) != len(values):
             raise ValueError("Invalid COO representation")
 
-        n = int(max(rows.max(), cols.max()) + 1)#get highest vertex index
+        n = int(max(max(rows), max(cols)) + 1)#get highest vertex index
         vertex_dictionary = {i: Vertex(i) for i in range(n)}
         for row, col, val in zip(rows, cols, values):
             vertex_row = vertex_dictionary[int(row)]
@@ -72,17 +73,37 @@ class Graph:
 
         return list(vertex_dictionary.values())
 
+    @staticmethod
+    def vertex_list_from_csr(data, indices, indptr):
+        rows = []
+        cols = []
+        values = []
+        for i in range(len(indptr) - 1):
+            for j in range(indptr[i], indptr[i + 1]):
+                rows.append(i)
+                cols.append(indices[j])
+                values.append(data[j])
+        return Graph.vertex_list_from_coo(rows, cols, values)
+
+    @classmethod
+    def from_file(cls, path : str):
+        path_obj = pl.Path(path)
+        if not path_obj.exists():
+            raise FileNotFoundError(f"File {path} does not exist.")
+        if path_obj.suffix == ".csv":
+            return cls.from_csv(path_obj)
+        elif path_obj.suffix == ".hdf5":
+            return cls.from_hdf5(path_obj)
+        elif path_obj.suffix == ".mat":
+            return cls.from_mat(path_obj)
+
     """
     Gets coo format from csv file in format row,col,val and creates graph from it.
     """
     @classmethod
-    def from_csv(cls, path : str):
-
-        if not pl.Path(path).exists():
-            raise FileNotFoundError(f"File {path} does not exist.")
-        if pl.Path(path).suffix != ".csv":
+    def from_csv(cls, path : pl.Path):
+        if path.suffix != ".csv":
             raise ValueError(f"File {path} is not a CSV file.")
-        
         dataframe = pd.read_csv(path)
         rows = dataframe['row'].to_numpy()
         cols = dataframe['col'].to_numpy()
@@ -93,11 +114,8 @@ class Graph:
     Reads hdf5 file that represents graph by either coo format djacency matrix or full adjacency matrix and creates graphfrom it.
     """
     @classmethod
-    def from_hdf5(cls, path : str):
-
-        if not pl.Path(path).exists():
-            raise FileNotFoundError(f"File {path} does not exist.")
-        if pl.Path(path).suffix != ".hdf5":
+    def from_hdf5(cls, path : pl.Path):
+        if path.suffix != ".hdf5":
             raise ValueError(f"File {path} is not a HDF5 file.")
         
         with pd.HDFStore(path, mode="r") as store:
@@ -114,23 +132,50 @@ class Graph:
                 return cls(cls.vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
             else:
                 raise ValueError(f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix' key.")              
-                 
+    
+    @classmethod
+    def from_mat(cls, path : pl.Path):
+        if path.suffix != ".mat":
+            raise ValueError(f"File {path} is not a MAT file.")
+        
+        mat = spio.loadmat(path)
+        if 'Problem' not in mat:
+            raise ValueError(f"MAT file {path} does not contain 'Problem' key.")
+              
+        adj_matrix = mat['Problem'][0][0][1]
+        try:
+            adj_matrix = adj_matrix.indptr
+        except:
+            adj_matrix = mat['Problem'][0][0][2] 
+    
+        rows = list()
+        cols = list()
+        values = list()
+        for i in range(len(adj_matrix.indptr) - 1):
+            for j in range(adj_matrix.indptr[i], adj_matrix.indptr[i + 1]):
+                cols.append(i)
+                rows.append(adj_matrix.indices[j])
+                values.append(adj_matrix.data[j])
+        return cls(cls.vertex_list_from_coo(rows, cols, values))
+
     @classmethod
     def from_coo(cls, adj_matrix : coo_matrix):
         return cls(cls.vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
 
+    @classmethod
+    def from_csr(cls, adj_matrix : csr_matrix):
+        return cls(cls.vertex_list_from_csr(adj_matrix.data, adj_matrix.indices, adj_matrix.indptr))
+
     """
     Creates adjacency matrix from given vertex list, the order of vertex list matters.
     """
-    def vertex_list_to_adj_matrix(self, vertex_list):#need to separate methods for subgraf and main graph!!
+    def vertex_list_to_adj_matrix(self, vertex_list, divide_edge_weights = False):
         if not vertex_list:
             return 0
 
         neighbtor_set = set(vertex_list)
-
         mapping = {v: i for i, v in enumerate(vertex_list)}
 
-        # Collect all edges using list comprehensions
         row = []
         col = []
         val = []
@@ -141,14 +186,15 @@ class Graph:
                     continue
                 row.append(id)
                 col.append(mapping[neighbor])
-                val.append(weight)
+                if divide_edge_weights:
+                    val.append(weight / self.edge_count[(vertex.id, neighbor.id)])
+                else:
+                    val.append(weight)
         # Build matrix
         shape = len(vertex_list)
         mat = np.zeros((shape, shape), dtype=np.float64)
         mat[row, col] = val
         return mat
-
-
     """
     computes the local schur complement for the graph
     """
@@ -157,10 +203,10 @@ class Graph:
             raise ValueError("Number of coarse vertices must be greater than 0.")
         
         adjacency_matrix_laplacian = laplacian(adjacency_matrix, dtype=np.float64)
-        a11 = adjacency_matrix_laplacian[0:num_coarse, 0:num_coarse]
+        a11 = adjacency_matrix_laplacian[:num_coarse, :num_coarse]
         a22 = adjacency_matrix_laplacian[num_coarse:, num_coarse:]
-        a21 = adjacency_matrix_laplacian[num_coarse:, 0:num_coarse]
-        a12 = adjacency_matrix_laplacian[0:num_coarse, num_coarse:]
+        a21 = adjacency_matrix_laplacian[num_coarse:, :num_coarse]
+        a12 = adjacency_matrix_laplacian[:num_coarse, num_coarse:]
 
         return a11 - (a12 @ np.linalg.inv(a22) @ a21)
         #return a11 - a12 @ np.linalg.solve(a22, a21)
@@ -195,14 +241,14 @@ class Graph:
     And no additional vertices can be added to the set without violating this property.
     @return coarse_vertices - set of coarse vertices
     """
-    def select_coarse_mis(self):
+    def select_coarse_mis(self, size = 1):
         coarse_vertices = set()
         remaining_vertices = set(self.vertex_list)
-        
+
         while remaining_vertices:
             current = remaining_vertices.pop()
             coarse_vertices.add(current)
-            remaining_vertices.difference_update(current.get_adj())
+            remaining_vertices.difference_update(self.get_neighbourhood(current, size=size))
         self.set_coarse(coarse_vertices)
         return coarse_vertices
 
@@ -214,19 +260,50 @@ class Graph:
             raise ValueError("Max depth must be at least 1.")
 
         for iterator, vertex in enumerate(self.coarse_vertices):
-            adj = set([vertex])
-            for _ in range(max_depth):
-                adj.update(*(v.get_adj() for v in adj))
+            vertex_list, edge_list = self.get_neighbourhood_with_edges(vertex, size=max_depth)
+            self.edge_count.update(edge_list)
+            vertex.graph = SubGraph(
+                vertex_list=vertex_list, 
+                graph=self, 
+                name=f"SubGraph{iterator}"
+            )
 
-            vertex.graph = SubGraph(vertex_list=list(adj), graph=self, name=f"SubGraph{iterator}")
+    def get_neighbourhood_with_edges(self, vertex, size = 1):
+        visited = set({vertex})
+        keys = set()
+        depth = defaultdict(lambda: 1000)
+        depth[vertex] = 0
+        queue = deque([vertex])
+        
+        while queue:
+            current = queue.popleft()
+            for neighbor in current.get_adj():
+                if depth[current] + 1 < depth[neighbor]:
+                    depth[neighbor] = depth[current] + 1
 
+                if depth[neighbor] <= size:
+                    keys.add((current.id, neighbor.id))
+                
+                if depth[current] >= size or neighbor in visited:
+                    continue
+
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+        return (list(visited), keys)
+
+    def get_neighbourhood(self, vertex, size = 1):
+        selected_vertices = set({vertex})
+        for _ in range(size):
+            selected_vertices.update(*(v.get_adj() for v in selected_vertices))
+        return list(selected_vertices)
+    
 class UniversalGraph(Graph):
     """
     Generic graph
     """
     def __init__(self, vertex_list):
         super().__init__(vertex_list)
-        self.edge_count = dict()
         self.coarse_vertices = list()
 
 class GridGraph(Graph):
@@ -235,29 +312,10 @@ class GridGraph(Graph):
     """
     def __init__(self, vertex_list):
         super().__init__(vertex_list)
-        self.edge_count = dict()
         self.coarse_vertices = list()
-
-    @classmethod
-    def from_csv(cls, path):
-        base = Graph.from_csv(path)
-        return cls(base.vertex_list)
-
-    @classmethod
-    def from_hdf5(cls, path):
-        base = Graph.from_hdf5(path)
-        return cls(base.vertex_list)
-    
-    @classmethod
-    def from_coo(cls, adj_matrix : coo_matrix):
-        base = Graph.from_coo(adj_matrix)
-        return cls(base.vertex_list)
-
     """
-    
     """
     def select_coarse_moore_neighborhood(self, spacing = 1):
-        start_time = time.time()
         coarse_vertices = set()
         visited = set()
         
@@ -269,7 +327,6 @@ class GridGraph(Graph):
             visited.update(self.get_moore_neighborhood(vertex, spacing))
                 
         self.set_coarse(coarse_vertices)
-        print(f"Coarse vertex selection took {time.time() - start_time} seconds.")
         return coarse_vertices
 
     """
@@ -300,7 +357,7 @@ class GridGraph(Graph):
             if degree <= 4:
                 subgraph_vertex_list = self.get_moore_neighborhood(vertex, size)
             else:
-                subgraph_vertex_list = self.get_neighborhood(vertex, size)
+                subgraph_vertex_list = self.get_neighbourhood(vertex, size=size)
 
             #graphs with less that 3 coarse vertices are not useful
             if len([vertex for vertex in subgraph_vertex_list if vertex.coarse]) < 3:
@@ -343,7 +400,7 @@ class GridGraph(Graph):
 
             current_layer = new_layer
             
-        return selected_vertices
+        return list(selected_vertices)
 
 class SubGraph(Graph):
     """
@@ -355,43 +412,26 @@ class SubGraph(Graph):
         self.name = name
         self.parent = graph
 
-        #populate the edge count in the parent graph, this is needed for overlapping subgraphs
-        for vertex in vertex_list:
-            for neighbour in vertex.get_adj():
-                if neighbour not in vertex_list:
-                    continue
-                key = (vertex.id, neighbour.id)
-                graph.edge_count[key] = graph.edge_count.get(key, 0) + 1
-
         #each subgraph has different coarse vertice count, but we already iterate through the vertex list before creation so we could count the coarse vertices there
         self.coarse_vertices_count = len([vertex for vertex in vertex_list if vertex.coarse])
+        self.sorted_vertex_list = sorted(self.vertex_list, key=self.parent.vertice_sort, reverse=False)
     
     def local_schur_complement(self):
         #needed
-        sorted_vertex_list = sorted(self.vertex_list, key=self.parent.vertice_sort, reverse=False)
-        #needed
-        adjacency_matrix = self.vertex_list_to_adj_matrix(sorted_vertex_list)
+        adjacency_matrix = self.parent.vertex_list_to_adj_matrix(self.sorted_vertex_list, divide_edge_weights=True)
 
-        #should change the weights before creating adjacency mattrix, find better way to do it
-        vertex_set = set(self.vertex_list)
-        vertex_ajd_matrix_mapping = {vertex: iterator for iterator, vertex in enumerate(sorted_vertex_list)}
-        for vertex in self.vertex_list:
-            for neighbour in vertex.get_adj():
-                if neighbour not in vertex_set:
-                    continue
-                adjacency_matrix[vertex_ajd_matrix_mapping[vertex], 
-                                 vertex_ajd_matrix_mapping[neighbour]] /= self.parent.edge_count[(vertex.id, 
-                                                                                                    neighbour.id)]
-        #needed
-        return self.schur_complement(self.coarse_vertices_count, adjacency_matrix)
+        schur_complement = self.schur_complement(self.coarse_vertices_count, adjacency_matrix)
+        return csr_matrix(schur_complement, dtype=np.float64)
     
     def local_to_global_mapping(self):
-        #could try to use sparse matrices like coo
-        local_to_global_mapping_matrix = np.zeros((self.parent.coarse_vertices_count, self.coarse_vertices_count))
-        coarse = self.vertex_list[:self.coarse_vertices_count]
-        
+        coarse = self.sorted_vertex_list[:self.coarse_vertices_count]
+
+        row_ind = list()
+        col_ind = list()
+    
         mapping = self.parent.sorted_vertex_adj_matrix_mapping
         for iterator, vertex in enumerate(coarse):
-            local_to_global_mapping_matrix[mapping[vertex]][iterator] = 1
+            row_ind.append(mapping[vertex])
+            col_ind.append(iterator)
 
-        return local_to_global_mapping_matrix
+        return csr_matrix((np.ones(len(row_ind)), (row_ind, col_ind)), shape=(self.parent.coarse_vertices_count, self.coarse_vertices_count), dtype=np.float64)
