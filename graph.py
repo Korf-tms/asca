@@ -144,7 +144,7 @@ class Graph:
               
         adj_matrix = mat['Problem'][0][0][1]
         try:
-            adj_matrix = adj_matrix.indptr
+            adj_matrix.indptr
         except:
             adj_matrix = mat['Problem'][0][0][2] 
     
@@ -324,7 +324,7 @@ class GridGraph(Graph):
                 continue
             
             coarse_vertices.add(vertex)
-            visited.update(self.get_moore_neighborhood(vertex, spacing))
+            visited.update(self.get_neighborhood_by_connectivity(vertex, spacing)[0])
                 
         self.set_coarse(coarse_vertices)
         return coarse_vertices
@@ -343,22 +343,33 @@ class GridGraph(Graph):
     """
     def create_subgraphs_moore_neighborhood_around_coarse(self, size=1):
         for iterator, vertex in enumerate(self.coarse_vertices):
-            subgraph_vertex_list = self.get_moore_neighborhood(vertex, size)
+            degree = len(vertex.get_adj())
+            keys = set()
+            if degree <= 4:
+                subgraph_vertex_list, keys = self.get_neighborhood_by_connectivity(vertex, size)
+            
+            else:
+                subgraph_vertex_list, keys = self.get_neighbourhood_with_edges(vertex, size=size)
+            self.edge_count.update(keys)
+            #graphs with less that 3 coarse vertices are not useful
+            if len([vertex for vertex in subgraph_vertex_list if vertex.coarse]) < 3:
+                continue
+
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
     """
     Creates the maximum possible number of subgraphs,
     size = 1 means one vertice in each direction.
     """
     def create_subgraphs_moore_neighborhood_all(self, size = 1):
-
         for iterator, vertex in enumerate(self.vertex_list):
-
             degree = len(vertex.get_adj())
+            keys = set()
             if degree <= 4:
-                subgraph_vertex_list = self.get_moore_neighborhood(vertex, size)
+                subgraph_vertex_list, keys = self.get_neighborhood_by_connectivity(vertex, size)
+            
             else:
-                subgraph_vertex_list = self.get_neighbourhood(vertex, size=size)
-
+                subgraph_vertex_list, keys = self.get_neighbourhood_with_edges(vertex, size=size)
+            self.edge_count.update(keys)
             #graphs with less that 3 coarse vertices are not useful
             if len([vertex for vertex in subgraph_vertex_list if vertex.coarse]) < 3:
                 continue
@@ -366,41 +377,39 @@ class GridGraph(Graph):
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
 
     """
-    Helper method that returns vertices around given vertex in square of given size.
+    Selects adjacent vertices to root vertex + selects vertices that have 2 or more adjacents of the last layer of selected vertices, in the selectet set
     """
-    def get_moore_neighborhood(self, vertex, size = 1):
-        selected_vertices = set()
-        selected_vertices.add(vertex)
-        current_layer = set(vertex.get_adj())
-        for i in range(size):
+    def get_neighborhood_by_connectivity(self, vertex, size = 1):
+        visited = set({vertex})
+        keys = set()
+        depth = dict()
+        depth[vertex] = 0
+        queue = deque([vertex])
+        size += 1
+        
+        while queue:
+            current = queue.popleft()
+            for neighbor in current.get_adj():
+                neighbor_depth = depth.get(neighbor, size + 10)
+                current_depth = depth.get(current, size + 10)
+                
+                if current_depth + 1 < neighbor_depth:
+                    depth[neighbor] = current_depth + 1
+                    neighbor_depth = current_depth + 1
 
-            #find all neighbours of loop for finding the corners
-            neighbours = []
-            for neighbour in current_layer:
-                neighbours.extend(neighbour.get_adj())
-
-            #find all vertices that are adjacent to at least one neighbour meaning the corners
-            counts = {}
-            for item in neighbours:
-                if item in selected_vertices:
+                if neighbor_depth == size and len(set(neighbor.get_adj()).intersection(visited)) <= 1:
                     continue
-                counts[item] = counts.get(item, 0) + 1
-            corners = {key for key in counts.keys() if counts[key] > 1 and key != vertex}
 
-            current_layer.update(corners)
+                if neighbor_depth <= size:
+                    keys.add((current.id, neighbor.id))
+                
+                if current_depth >= size or neighbor in visited:
+                    continue
+                
+                visited.add(neighbor)
+                queue.append(neighbor)
 
-            selected_vertices.update(current_layer)
-
-            if i == size - 1:
-                break
-
-            new_layer = set()
-            for neighbour in current_layer:
-                new_layer.update(neighbour.get_adj())
-
-            current_layer = new_layer
-            
-        return list(selected_vertices)
+        return (list(visited), keys)
 
 class SubGraph(Graph):
     """
