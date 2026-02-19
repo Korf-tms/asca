@@ -7,6 +7,7 @@ from joblib import Parallel, delayed
 
 import pathlib as pl
 import pandas as pd
+import h5py
 import numpy as np
 import scipy.io as spio
 
@@ -118,17 +119,17 @@ class Graph:
         if path.suffix != ".hdf5":
             raise ValueError(f"File {path} is not a HDF5 file.")
         
-        with pd.HDFStore(path, mode="r") as store:
-            keys = set(store.keys())
-            if "/coo_matrix" in keys:
-                dataframe = store.get("coo_matrix")
-                rows = dataframe['row'].to_numpy()
-                cols = dataframe['col'].to_numpy()
-                values = dataframe['val'].to_numpy(dtype=np.float64)
+        with h5py.File(path, mode="r") as file:
+            keys = list(file.keys())
+            if "coo_matrix" in keys:
+                dataframe = file["coo_matrix"]
+                rows = dataframe["row"]
+                cols = dataframe["col"]
+                values = dataframe["val"]
                 return cls(cls.vertex_list_from_coo(rows, cols, values))
-            elif "/adj_matrix" in keys:
-                dataframe = store.get("adj_matrix")
-                adj_matrix = coo_matrix(dataframe.to_numpy())
+            elif "adj_matrix" in keys:
+                dataframe = file["adj_matrix"]
+                adj_matrix = coo_matrix(dataframe)
                 return cls(cls.vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
             else:
                 raise ValueError(f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix' key.")              

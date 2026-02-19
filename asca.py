@@ -3,7 +3,7 @@ from scipy.sparse.linalg import cgs, cg
 from joblib import Parallel, delayed
 
 import numpy as np
-import pandas as pd
+import h5py
 
 import sys
 import graph
@@ -25,7 +25,11 @@ class Asca:
         return temp
 
     def cgs_callback(self, solution_vector):
+        group = self.file.require_group(f"iteration{self.current_iteration}")
+        group = group.require_group(f"cgs_iterations")
+        group.create_dataset(f"cgs_solution_{self.cgs_iterations}", data=solution_vector)
         self.cgs_iterations += 1
+        
 
     def solve_asca(self):
 
@@ -34,7 +38,6 @@ class Asca:
             indexes = (range(self.current_approximation.shape[0]), range(self.current_approximation.shape[1]))
             self.current_approximation[indexes] = 0
             self.current_graph = graph.UniversalGraph.from_csr(self.current_approximation)
-            self.current_iteration += 1
 
         graph_size = len(self.current_graph.vertex_list)
         print(f"ASCA Iteration {self.current_iteration}\ncurrent size: {graph_size}")
@@ -70,12 +73,19 @@ class Asca:
         print(f"Calculation took {time.time() - start_time} seconds.")
 
         self.current_approximation = Q
+        self.current_iteration += 1
     
     def evaluate_approximation(self):
         # cg needs semi positive definite matrix, even small negatives make issues
         approximation = self.current_approximation + np.eye(self.current_approximation.shape[0]) * 1e-5
         schur = self.current_graph.local_schur_complement() + np.eye(self.current_approximation.shape[0]) * 1e-5
         
+        self.file = h5py.File("data/analysis.hdf5", mode="w")
+        group = self.file.require_group(f"iteration{self.current_iteration}")
+        group.create_dataset(f"asca", data=approximation)
+        group.create_dataset(f"schur_complement", data=schur)
+        group.create_dataset(f"difference", data=schur - approximation)
+
         tolerance = 1e-5
         print(f"Matrix symetry check of approximation with tolerance {tolerance}: {np.allclose(approximation, approximation.T, rtol=tolerance, atol=tolerance)}")
         print(f"Matrix symetry check of schur complement with tolerance {tolerance}: {np.allclose(schur, schur.T, rtol=tolerance, atol=tolerance)}")
@@ -96,13 +106,8 @@ class Asca:
             b=b,
             callback=self.cgs_callback
             )[1]}")
-
+        self.file.close()
         print(f"Number of iterations of cgs: {self.cgs_iterations}")
-
-        with pd.HDFStore("data/analysis.hdf5", mode="a") as store:
-            store.put(f"analysis/iteration{self.current_iteration}/asca", pd.DataFrame(approximation))
-            store.put(f"analysis/iteration{self.current_iteration}/schur_complement", pd.DataFrame(schur))
-            store.put(f"analysis/iteration{self.current_iteration}/difference", pd.DataFrame(schur - approximation))
 
 if len(sys.argv) != 2:
     print("Usage: python asca.py <path_to_file>")
@@ -113,6 +118,7 @@ utils.clear_folder_or_create("images")
 
 asca = Asca(sys.argv[1])
 
-for _ in range(1):
+for _ in range(2):
     asca.solve_asca()
-    asca.evaluate_approximation()
+
+asca.evaluate_approximation()

@@ -6,6 +6,7 @@ import pandas as pd
 import pathlib
 import time
 import graphviz
+import h5py
 
 
 def visualize_graph(graph, color='red', name="default"):
@@ -57,7 +58,11 @@ def generate_grid_graph(rows, cols, filename, type="csv"):
     if type == "csv":
         dataframe.to_csv(filename, index=False)
     elif type == "hdf5":
-        dataframe.to_hdf(filename, key="coo_matrix", mode="w")
+        with h5py.File(filename, mode="w") as file:
+            group = file.require_group("coo_matrix")
+            group.create_dataset("row", data=dataframe["row"].to_numpy())
+            group.create_dataset("col", data=dataframe["col"].to_numpy())
+            group.create_dataset("val", data=dataframe["val"].to_numpy(dtype=np.float64))
 
 def clear_folder_or_create(folder_path):
     folder = pathlib.Path(folder_path)
