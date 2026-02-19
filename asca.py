@@ -13,6 +13,7 @@ import time
 class Asca:
     def __init__(self, filename, iterations=1):
         self.current_graph = graph.UniversalGraph.from_file(filename)
+        self.current_approximation = None
         self.iterations = iterations
         self.current_iteration = 0
         self.cgs_iterations = 0
@@ -27,6 +28,14 @@ class Asca:
         self.cgs_iterations += 1
 
     def solve_asca(self):
+
+        if self.current_iteration != 0:
+            self.current_approximation = abs(self.current_approximation)
+            indexes = (range(self.current_approximation.shape[0]), range(self.current_approximation.shape[1]))
+            self.current_approximation[indexes] = 0
+            self.current_graph = graph.UniversalGraph.from_csr(self.current_approximation)
+            self.current_iteration += 1
+
         graph_size = len(self.current_graph.vertex_list)
         print(f"ASCA Iteration {self.current_iteration}\ncurrent size: {graph_size}")
 
@@ -59,12 +68,13 @@ class Asca:
         for contribution in generator:
             Q += contribution
         print(f"Calculation took {time.time() - start_time} seconds.")
-        
-        schur = self.current_graph.local_schur_complement()
 
+        self.current_approximation = Q
+    
+    def evaluate_approximation(self):
         # cg needs semi positive definite matrix, even small negatives make issues
-        approximation = Q + np.eye(Q.shape[0]) * 1e-5
-        schur += np.eye(schur.shape[0]) * 1e-5
+        approximation = self.current_approximation + np.eye(self.current_approximation.shape[0]) * 1e-5
+        schur = self.current_graph.local_schur_complement() + np.eye(self.current_approximation.shape[0]) * 1e-5
         
         tolerance = 1e-5
         print(f"Matrix symetry check of approximation with tolerance {tolerance}: {np.allclose(approximation, approximation.T, rtol=tolerance, atol=tolerance)}")
@@ -79,7 +89,7 @@ class Asca:
 
         self.cgs_iterations = 0
 
-        b = np.random.rand(Q.shape[0], 1)
+        b = np.random.rand(approximation.shape[0], 1)
         print(f"Return value of cgs: {cgs(
             A=schur, 
             M=approximation, 
@@ -93,12 +103,6 @@ class Asca:
             store.put(f"analysis/iteration{self.current_iteration}/asca", pd.DataFrame(approximation))
             store.put(f"analysis/iteration{self.current_iteration}/schur_complement", pd.DataFrame(schur))
             store.put(f"analysis/iteration{self.current_iteration}/difference", pd.DataFrame(schur - approximation))
-        
-        Q = abs(Q)
-        indexes = (range(Q.shape[0]), range(Q.shape[1]))
-        Q[indexes] = 0
-        self.current_graph = graph.GridGraph.from_csr(Q)
-        self.current_iteration += 1
 
 if len(sys.argv) != 2:
     print("Usage: python asca.py <path_to_file>")
@@ -111,3 +115,4 @@ asca = Asca(sys.argv[1])
 
 for _ in range(1):
     asca.solve_asca()
+    asca.evaluate_approximation()
