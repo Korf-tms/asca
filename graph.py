@@ -307,15 +307,6 @@ class UniversalGraph(Graph):
         super().__init__(vertex_list)
         self.coarse_vertices = list()
 
-class GridGraph(Graph):
-    """
-    Grid graph
-    """
-    def __init__(self, vertex_list):
-        super().__init__(vertex_list)
-        self.coarse_vertices = list()
-    """
-    """
     def select_coarse_moore_neighborhood(self, spacing = 1):
         coarse_vertices = set()
         visited = set()
