@@ -1,6 +1,8 @@
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import cgs, cg
 from joblib import Parallel, delayed
+from datetime import datetime
+
 
 import numpy as np
 import h5py
@@ -9,9 +11,16 @@ import sys
 import graph
 import utils
 import time
+import logging
+
+logger = logging.getLogger(__name__)
+
+LOG_FOLDER = "logs"
 
 class Asca:
     def __init__(self, filename, iterations=1):
+        now = datetime.now().strftime("%S-%M-%H_%d_%m_%y_log")
+        logging.basicConfig(filename=f"{LOG_FOLDER}/{now}.log", filemode='w', level=logging.INFO)
         self.current_graph = graph.UniversalGraph.from_file(filename)
         self.current_approximation = None
         self.iterations = iterations
@@ -40,17 +49,17 @@ class Asca:
             self.current_graph = graph.UniversalGraph.from_csr(self.current_approximation)
 
         graph_size = len(self.current_graph.vertex_list)
-        print(f"ASCA Iteration {self.current_iteration}\ncurrent size: {graph_size}")
+        logging.info(f"ASCA Iteration {self.current_iteration} current size: {graph_size}")
 
         # selecting coarse vertices
         start_time = time.time()
         self.current_graph.select_coarse_mis(1)
-        print(f"Coarse vertex selection took {time.time() - start_time} seconds.")
+        logging.info(f"Coarse vertex selection took {time.time() - start_time} seconds.")
 
         # creating subgraphs
         start_time = time.time()
         self.current_graph.create_subgraphs_depth(2)
-        print(f"Subgraph creation took {time.time() - start_time} seconds.")
+        logging.info(f"Subgraph creation took {time.time() - start_time} seconds.")
 
         if graph_size < 200:
             utils.visualize_graph(self.current_graph, name=f"Graph{self.current_iteration}")
@@ -70,7 +79,7 @@ class Asca:
         )
         for contribution in generator:
             Q += contribution
-        print(f"Calculation took {time.time() - start_time} seconds.")
+        logging.info(f"Calculation took {time.time() - start_time} seconds.")
 
         self.current_approximation = Q
         self.current_iteration += 1
@@ -87,27 +96,31 @@ class Asca:
         group.create_dataset(f"difference", data=schur - approximation)
 
         tolerance = 1e-5
-        print(f"Matrix symetry check of approximation with tolerance {tolerance}: {np.allclose(approximation, approximation.T, rtol=tolerance, atol=tolerance)}")
-        print(f"Matrix symetry check of schur complement with tolerance {tolerance}: {np.allclose(schur, schur.T, rtol=tolerance, atol=tolerance)}")
+        logging.info(f"Matrix symetry check of approximation with tolerance {tolerance}: {np.allclose(approximation, approximation.T, rtol=tolerance, atol=tolerance)}")
+        logging.info(f"Matrix symetry check of schur complement with tolerance {tolerance}: {np.allclose(schur, schur.T, rtol=tolerance, atol=tolerance)}")
         sdp_approximation = np.all(np.linalg.eigvalsh(approximation) >= 0)
-        print(f"Positive semi-definite check approximation: {sdp_approximation}")
+        logging.info(f"Positive semi-definite check approximation: {sdp_approximation}")
         spd_schur = np.all(np.linalg.eigvalsh(schur) >= 0)
-        print(f"Positive semi-definite check schur complement: {spd_schur}")
+        logging.info(f"Positive semi-definite check schur complement: {spd_schur}")
 
         if not sdp_approximation or not spd_schur:
-            print("Warning: Matrices are not positive semi-definite. CGS may not converge.")
+            logging.warning("Matrix is not positive semi-definite, cg might not converge.")
 
         self.cgs_iterations = 0
 
         b = np.random.rand(approximation.shape[0], 1)
-        print(f"Return value of cgs: {cgs(
+        x, info = cgs(
             A=schur, 
             M=approximation, 
             b=b,
             callback=self.cgs_callback
-            )[1]}")
+            )
+        logging.info(f"Return value of cgs x: {x}, info: {info}")
         self.file.close()
-        print(f"Number of iterations of cgs: {self.cgs_iterations}")
+        logging.info(f"Number of iterations of cgs: {self.cgs_iterations}")
+
+        logging.info(f"Final solution vector: {schur @ x}")
+        logging.info(f"Final approximation solution vector: {b}")
 
 if len(sys.argv) != 2:
     print("Usage: python asca.py <path_to_file>")
@@ -118,7 +131,6 @@ utils.clear_folder_or_create("images")
 
 asca = Asca(sys.argv[1])
 
-for _ in range(2):
+for _ in range(1):
     asca.solve_asca()
-
-asca.evaluate_approximation()
+    asca.evaluate_approximation()
