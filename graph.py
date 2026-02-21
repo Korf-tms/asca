@@ -55,7 +55,6 @@ class Graph:
         self.edge_count = Counter()
         self.name = "Graph"
     
-
     """
     Creates vertex list from rows, cols, values (coo_matrix format).
     """
@@ -233,9 +232,14 @@ class Graph:
     """
     returns list of subgraphs in the graph
     """
-    def get_subgraphs(self):
-        return [vertex.graph for vertex in self.vertex_list if vertex.graph != None]
-    
+class UniversalGraph(Graph):
+    """
+    Generic graph
+    """
+    def __init__(self, vertex_list):
+        super().__init__(vertex_list)
+        self.coarse_vertices = list()
+
     """
     Selects coarse vertices that are part of maximal independent set.
     Maximal independent set is a set of vertices such that no two vertices are adjacent.
@@ -252,60 +256,6 @@ class Graph:
             remaining_vertices.difference_update(self.get_neighbourhood(current, size=size))
         self.set_coarse(coarse_vertices)
         return coarse_vertices
-
-    """
-    Creates subgraphs around each coarse vertex with given depth.
-    """
-    def create_subgraphs_depth(self, max_depth = 2):
-        if max_depth < 1:
-            raise ValueError("Max depth must be at least 1.")
-
-        for iterator, vertex in enumerate(self.coarse_vertices):
-            vertex_list, edge_list = self.get_neighbourhood_with_edges(vertex, size=max_depth)
-            self.edge_count.update(edge_list)
-            vertex.graph = SubGraph(
-                vertex_list=vertex_list, 
-                graph=self, 
-                name=f"SubGraph{iterator}"
-            )
-
-    def get_neighbourhood_with_edges(self, vertex, size = 1):
-        visited = set({vertex})
-        keys = set()
-        depth = defaultdict(lambda: 1000)
-        depth[vertex] = 0
-        queue = deque([vertex])
-        
-        while queue:
-            current = queue.popleft()
-            for neighbor in current.get_adj():
-                if depth[current] + 1 < depth[neighbor]:
-                    depth[neighbor] = depth[current] + 1
-
-                if depth[neighbor] <= size:
-                    keys.add((current.id, neighbor.id))
-                
-                if depth[current] >= size or neighbor in visited:
-                    continue
-
-                visited.add(neighbor)
-                queue.append(neighbor)
-
-        return (list(visited), keys)
-
-    def get_neighbourhood(self, vertex, size = 1):
-        selected_vertices = set({vertex})
-        for _ in range(size):
-            selected_vertices.update(*(v.get_adj() for v in selected_vertices))
-        return list(selected_vertices)
-    
-class UniversalGraph(Graph):
-    """
-    Generic graph
-    """
-    def __init__(self, vertex_list):
-        super().__init__(vertex_list)
-        self.coarse_vertices = list()
 
     def select_coarse_moore_neighborhood(self, spacing = 1):
         coarse_vertices = set()
@@ -369,7 +319,56 @@ class UniversalGraph(Graph):
             vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
 
     """
-    Selects adjacent vertices to root vertex + selects vertices that have 2 or more adjacents of the last layer of selected vertices, in the selectet set
+    Creates subgraphs around each coarse vertex with given depth.
+    """
+    def create_subgraphs_depth(self, max_depth = 2):
+        if max_depth < 1:
+            raise ValueError("Max depth must be at least 1.")
+
+        for iterator, vertex in enumerate(self.coarse_vertices):
+            vertex_list, edge_list = self.get_neighbourhood_with_edges(vertex, size=max_depth)
+            self.edge_count.update(edge_list)
+            vertex.graph = SubGraph(
+                vertex_list=vertex_list, 
+                graph=self, 
+                name=f"SubGraph{iterator}"
+            )
+    """
+    Return adjacents vertices of the root vertex to depth of size and edges of theese vertices
+    """
+    def get_neighbourhood_with_edges(self, vertex, size = 1):
+        visited = set({vertex})
+        keys = set()
+        depth = defaultdict(lambda: 1000)
+        depth[vertex] = 0
+        queue = deque([vertex])
+        
+        while queue:
+            current = queue.popleft()
+            for neighbor in current.get_adj():
+                if depth[current] + 1 < depth[neighbor]:
+                    depth[neighbor] = depth[current] + 1
+
+                if depth[neighbor] <= size:
+                    keys.add((current.id, neighbor.id))
+                
+                if depth[current] >= size or neighbor in visited:
+                    continue
+
+                visited.add(neighbor)
+                queue.append(neighbor)
+
+        return (list(visited), keys)
+    """
+    Returns adjacents vertices of the root vertex to depth of size
+    """
+    def get_neighbourhood(self, vertex, size = 1):
+        selected_vertices = set({vertex})
+        for _ in range(size):
+            selected_vertices.update(*(v.get_adj() for v in selected_vertices))
+        return list(selected_vertices)
+    """
+    Returns adjacents vertices of the root vertex to depth of size + vertices that have at least size adjacents to the selected vertices
     """
     def get_neighborhood_by_connectivity(self, vertex, size = 1):
         visited = set({vertex})
@@ -403,6 +402,9 @@ class UniversalGraph(Graph):
 
         return (list(visited), keys)
 
+    def get_subgraphs(self):
+        return [vertex.graph for vertex in self.vertex_list if vertex.graph != None]
+    
 class SubGraph(Graph):
     """
     Subgraph class
