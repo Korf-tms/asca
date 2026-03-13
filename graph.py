@@ -24,17 +24,16 @@ class Vertex:
         self.id = id
         self.adj = []
         self.coarse = False
-        self.name = ""
         self.graph = None
     
     def get_adj(self):
         return [neighbor for neighbor, _ in self.adj]
 
     def __str__(self):
-        return f"{self.name}Vertex: {self.id}"
+        return f"Vertex: {self.id}"
     
     def __repr__(self):
-        return f"{self.name}Vertex: {self.id}"
+        return f"Vertex: {self.id}"
 
     def __hash__(self):
         return self.id

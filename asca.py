@@ -18,11 +18,21 @@ logger = logging.getLogger(__name__)
 LOG_FOLDER = "logs"
 
 class Asca:
-    def __init__(self, filename, iterations=1):
+    def __init__(self, 
+                 filename, 
+                 coarse_selection_method="mis", 
+                 coarse_selection_method_arguments={"size":1}, 
+                 create_subgraphs_method="depth", 
+                 create_subgraphs_method_arguments={"max_depth":1},
+                 iterations=1):
+        
         now = datetime.now().strftime("%S-%M-%H_%d_%m_%y_log")
         logging.basicConfig(filename=f"{LOG_FOLDER}/{now}.log", filemode='w', level=logging.INFO)
-        self.current_graph = graph.UniversalGraph.from_file(filename)
-        self.current_approximation = None
+        self.filename = filename
+        self.coarse_selection_method = coarse_selection_method
+        self.coarse_selection_method_arguments = coarse_selection_method_arguments
+        self.create_subgraphs_method = create_subgraphs_method
+        self.create_subgraphs_method_arguments = create_subgraphs_method_arguments
         self.iterations = iterations
         self.current_iteration = 0
         self.cgs_iterations = 0
@@ -39,34 +49,38 @@ class Asca:
         group.create_dataset(f"cgs_solution_{self.cgs_iterations}", data=solution_vector)
         self.cgs_iterations += 1
         
-
     def solve_asca(self):
 
-        if self.current_iteration != 0:
-            self.current_approximation = abs(self.current_approximation)
-            indexes = (range(self.current_approximation.shape[0]), range(self.current_approximation.shape[1]))
-            self.current_approximation[indexes] = 0
-            self.current_graph = graph.UniversalGraph.from_csr(self.current_approximation)
-
-        graph_size = len(self.current_graph.vertex_list)
+        current_graph = graph.UniversalGraph.from_file(self.filename)
+        
+        coarse_selection_methods = {
+            "mis":current_graph.select_coarse_mis,
+            "moore":current_graph.select_coarse_moore_neighborhood
+        }
+        create_subgraphs_methods = {
+            "depth":current_graph.create_subgraphs_depth,
+            "moore_all":current_graph.create_subgraphs_moore_neighborhood_all,
+            "moore_coarse":current_graph.create_subgraphs_moore_neighborhood_around_coarse
+        }
+        graph_size = len(current_graph.vertex_list)
         logging.info(f"ASCA Iteration {self.current_iteration} current size: {graph_size}")
-
+        coarse_selection_methods[self.coarse_selection_method](**self.coarse_selection_method_arguments)
         # selecting coarse vertices
         start_time = time.time()
-        self.current_graph.select_coarse_mis(1)
+        
         logging.info(f"Coarse vertex selection took {time.time() - start_time} seconds.")
 
         # creating subgraphs
         start_time = time.time()
-        self.current_graph.create_subgraphs_depth(2)
+        create_subgraphs_methods[self.create_subgraphs_method](**self.create_subgraphs_method_arguments)
         logging.info(f"Subgraph creation took {time.time() - start_time} seconds.")
 
         if graph_size < 200:
-            utils.visualize_graph(self.current_graph, name=f"Graph{self.current_iteration}")
+            utils.visualize_graph(current_graph, name=f"Graph{self.current_iteration}")
 
         # calculating approximation
         start_time = time.time()
-        l = self.current_graph.coarse_vertices_count
+        l = current_graph.coarse_vertices_count
         Q = csr_matrix((l, l), dtype=np.float64)
         
         generator = Parallel(
@@ -75,7 +89,7 @@ class Asca:
             return_as="generator"
         )(
             delayed(self.calculate_subgraph_contribution)
-            (subgraph) for subgraph in self.current_graph.get_subgraphs()
+            (subgraph) for subgraph in current_graph.get_subgraphs()
         )
         for contribution in generator:
             Q += contribution
@@ -131,6 +145,4 @@ utils.clear_folder_or_create("images")
 
 asca = Asca(sys.argv[1])
 
-for _ in range(1):
-    asca.solve_asca()
-    asca.evaluate_approximation()
+asca.solve_asca()
