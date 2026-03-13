@@ -2,7 +2,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import cgs, cg
 from joblib import Parallel, delayed
 from datetime import datetime
-
+from enum import Enum
 
 import numpy as np
 import h5py
@@ -20,13 +20,13 @@ DATA_FOLDER = "data"
 
 class Asca:
     def __init__(self, 
-                 filename, 
-                 coarse_selection_method="mis", 
-                 coarse_selection_method_arguments={"size":1}, 
-                 create_subgraphs_method="depth", 
-                 create_subgraphs_method_arguments={"max_depth":2},
-                 store_contributions=False,
-                 iterations=1):
+        filename, 
+        coarse_selection_method="mis", 
+        coarse_selection_method_arguments={"size":1}, 
+        create_subgraphs_method="depth", 
+        create_subgraphs_method_arguments={"max_depth":2},
+        store_contributions=False,
+        iterations=1):
         
         utils.clear_folder_or_create(LOG_FOLDER)
         utils.clear_folder_or_create(DATA_FOLDER)
@@ -41,12 +41,6 @@ class Asca:
         self.create_subgraphs_method_arguments = create_subgraphs_method_arguments
         self.iterations = iterations
         self.current_iteration = 0
-    
-    def calculate_subgraph_contribution(self, sub_graph):
-        mapping = sub_graph.local_to_global_mapping()
-        schur_complement = sub_graph.local_schur_complement()
-        temp = mapping @ schur_complement @ mapping.T
-        return temp
     
     def run_approximation(self):
         current_graph = graph.UniversalGraph.from_file(self.filename)
@@ -84,6 +78,12 @@ class Asca:
             indexes = (range(Q.shape[0]), range(Q.shape[1]))
             Q[indexes] = 0
             current_graph = graph.UniversalGraph.from_csr(Q)
+
+    def calculate_subgraph_contribution(self, sub_graph):
+        mapping = sub_graph.local_to_global_mapping()
+        schur_complement = sub_graph.local_schur_complement()
+        temp = mapping @ schur_complement @ mapping.T
+        return temp
 
     def calculate_approximation(self, graph, coarse_selection_method, create_subgraphs_method):
         coarse_selection_method(**self.coarse_selection_method_arguments)
