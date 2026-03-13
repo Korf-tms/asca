@@ -256,7 +256,7 @@ class UniversalGraph(Graph):
         self.set_coarse(coarse_vertices)
         return coarse_vertices
 
-    def select_coarse_moore_neighborhood(self, spacing = 1):
+    def select_coarse_moore_neighborhood(self, size = 1):
         coarse_vertices = set()
         visited = set()
         
@@ -265,7 +265,7 @@ class UniversalGraph(Graph):
                 continue
             
             coarse_vertices.add(vertex)
-            visited.update(self.get_neighborhood_by_connectivity(vertex, spacing)[0])
+            visited.update(self.get_neighborhood_by_connectivity(vertex, size)[0])
                 
         self.set_coarse(coarse_vertices)
         return coarse_vertices
