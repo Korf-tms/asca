@@ -49,18 +49,35 @@ class Graph:
     coarse_vertices : list - list of coarse vertices in the graph, is populated after one of the select_coarse methods is called
     name : str - name of the graph for visualization purposes
     """
-    def __init__(self, vertex_list : list[Vertex]):
-        self.vertex_list = vertex_list
+    def __init__(self, 
+                 csr_matrix : csr_matrix = None,
+                 path : str = None
+                 ):
+        self.vertex_list = list()
+        if csr_matrix != None:
+            coo_matrix_obj = csr_matrix.tocoo()
+            self.vertex_list = self._vertex_list_from_coo(
+                coo_matrix_obj.row,
+                coo_matrix_obj.col,
+                coo_matrix_obj.data,
+            )
+        elif path != None:
+            path_obj = pl.Path(path)
+            if not path_obj.exists():
+                raise FileNotFoundError(f"File {path} does not exist.")
+            if path_obj.suffix == ".csv":
+                self.vertex_list = self._vertex_list_from_csv(path=path)
+            elif path_obj.suffix == ".hdf5":
+                self.vertex_list = self._vertex_list_from_hdf5(path=path)
+            elif path_obj.suffix == ".mat":
+                self.vertex_list = self._vertex_list_from_mat(path=path)
+
         self.edge_count = Counter()
         self.name = "Graph"
-    
-    """
-    Creates vertex list from rows, cols, values (coo_matrix format).
-    """
-    @staticmethod
-    def vertex_list_from_coo(rows, cols, values):
 
-        if len(rows) != len(cols) != len(values):
+    @staticmethod
+    def _vertex_list_from_coo(rows, cols, values):
+        if not (len(rows) == len(cols) == len(values)):
             raise ValueError("Invalid COO representation")
 
         n = int(max(max(rows), max(cols)) + 1)#get highest vertex index
@@ -71,99 +88,38 @@ class Graph:
             vertex_row.adj.append((vertex_col, val))
 
         return list(vertex_dictionary.values())
+    
+    @staticmethod
+    def _vertex_list_from_csv(path):
+        dataframe = pd.read_csv(path)
+        return Graph._vertex_list_from_coo(dataframe["row"], dataframe["col"], dataframe["val"])
 
     @staticmethod
-    def vertex_list_from_csr(data, indices, indptr):
-        rows = []
-        cols = []
-        values = []
-        for i in range(len(indptr) - 1):
-            for j in range(indptr[i], indptr[i + 1]):
-                rows.append(i)
-                cols.append(indices[j])
-                values.append(data[j])
-        return Graph.vertex_list_from_coo(rows, cols, values)
-
-    @classmethod
-    def from_file(cls, path : str):
-        path_obj = pl.Path(path)
-        if not path_obj.exists():
-            raise FileNotFoundError(f"File {path} does not exist.")
-        if path_obj.suffix == ".csv":
-            return cls.from_csv(path_obj)
-        elif path_obj.suffix == ".hdf5":
-            return cls.from_hdf5(path_obj)
-        elif path_obj.suffix == ".mat":
-            return cls.from_mat(path_obj)
-
-    """
-    Gets coo format from csv file in format row,col,val and creates graph from it.
-    """
-    @classmethod
-    def from_csv(cls, path : pl.Path):
-        if path.suffix != ".csv":
-            raise ValueError(f"File {path} is not a CSV file.")
-        dataframe = pd.read_csv(path)
-        rows = dataframe['row'].to_numpy()
-        cols = dataframe['col'].to_numpy()
-        values = dataframe['val'].to_numpy()
-        return cls(cls.vertex_list_from_coo(rows, cols, values))
-
-    """
-    Reads hdf5 file that represents graph by either coo format djacency matrix or full adjacency matrix and creates graphfrom it.
-    """
-    @classmethod
-    def from_hdf5(cls, path : pl.Path):
-        if path.suffix != ".hdf5":
-            raise ValueError(f"File {path} is not a HDF5 file.")
-        
-        with h5py.File(path, mode="r") as file:
-            keys = list(file.keys())
-            if "coo_matrix" in keys:
-                dataframe = file["coo_matrix"]
-                rows = dataframe["row"]
-                cols = dataframe["col"]
-                values = dataframe["val"]
-                return cls(cls.vertex_list_from_coo(rows, cols, values))
-            elif "adj_matrix" in keys:
-                dataframe = file["adj_matrix"]
-                adj_matrix = coo_matrix(dataframe)
-                return cls(cls.vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
+    def _vertex_list_from_hdf5(path):
+        with h5py.File(path, "r") as file:
+            if "coo_matrix" in file:
+                group = file["coo_matrix"]
+                return Graph._vertex_list_from_coo(group["row"], group["col"], group["val"])
+            elif "adj_matrix" in file:
+                adj = coo_matrix(file["adj_matrix"])
+                return Graph._vertex_list_from_coo(adj.row, adj.col, adj.data)
             else:
-                raise ValueError(f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix' key.")              
-    
-    @classmethod
-    def from_mat(cls, path : pl.Path):
-        if path.suffix != ".mat":
-            raise ValueError(f"File {path} is not a MAT file.")
-        
+                raise ValueError(
+                    f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix'."
+                )
+
+    @staticmethod
+    def _vertex_list_from_mat(path):
         mat = spio.loadmat(path)
-        if 'Problem' not in mat:
+        if "Problem" not in mat:
             raise ValueError(f"MAT file {path} does not contain 'Problem' key.")
-              
-        adj_matrix = mat['Problem'][0][0][1]
-        try:
-            adj_matrix.indptr
-        except:
-            adj_matrix = mat['Problem'][0][0][2] 
-    
-        rows = list()
-        cols = list()
-        values = list()
-        for i in range(len(adj_matrix.indptr) - 1):
-            for j in range(adj_matrix.indptr[i], adj_matrix.indptr[i + 1]):
-                cols.append(i)
-                rows.append(adj_matrix.indices[j])
-                values.append(adj_matrix.data[j])
-        return cls(cls.vertex_list_from_coo(rows, cols, values))
 
-    @classmethod
-    def from_coo(cls, adj_matrix : coo_matrix):
-        return cls(cls.vertex_list_from_coo(adj_matrix.row, adj_matrix.col, adj_matrix.data))
+        adj = mat["Problem"][0][0][1]
+        if not hasattr(adj, "indptr"):
+            adj = mat["Problem"][0][0][2]
 
-    @classmethod
-    def from_csr(cls, adj_matrix : csr_matrix):
-        return cls(cls.vertex_list_from_csr(adj_matrix.data, adj_matrix.indices, adj_matrix.indptr))
+        coo_adj = adj.tocoo()
+        return Graph._vertex_list_from_coo(coo_adj.row, coo_adj.col, coo_adj.data)
 
     """
     Creates adjacency matrix from given vertex list, the order of vertex list matters.
@@ -197,7 +153,7 @@ class Graph:
     """
     computes the local schur complement for the graph
     """
-    def schur_complement(self, num_coarse, adjacency_matrix):
+    def schur_complement(self, num_coarse, adjacency_matrix):#replace with liberary method
         if num_coarse == 0:
             raise ValueError("Number of coarse vertices must be greater than 0.")
         
@@ -225,20 +181,13 @@ class Graph:
         self.coarse_vertices_count = len(coarse_vertices)
         self.sorted_vertex_adj_matrix_mapping = {vertex: i for i, vertex in enumerate(sorted(self.vertex_list, key=self.vertice_sort, reverse=False))}
     
-    def vertice_sort(self, vertex):
-        return (not vertex.coarse, vertex.id)
-
     """
     returns list of subgraphs in the graph
     """
-class UniversalGraph(Graph):
-    """
-    Generic graph
-    """
-    def __init__(self, vertex_list):
-        super().__init__(vertex_list)
-        self.coarse_vertices = list()
 
+    def vertice_sort(self, vertex):
+        return (not vertex.coarse, vertex.id)
+    
     """
     Selects coarse vertices that are part of maximal independent set.
     Maximal independent set is a set of vertices such that no two vertices are adjacent.
@@ -404,7 +353,7 @@ class UniversalGraph(Graph):
     def get_subgraphs(self):
         return [vertex.graph for vertex in self.vertex_list if vertex.graph != None]
     
-class SubGraph(Graph):
+class SubGraph():
     """
     Subgraph class
     Every subgraph is tied to a vertex in the main graph, that vertex acts as a origin of the subgraph.
@@ -418,6 +367,22 @@ class SubGraph(Graph):
         self.coarse_vertices_count = len([vertex for vertex in vertex_list if vertex.coarse])
         self.sorted_vertex_list = sorted(self.vertex_list, key=self.parent.vertice_sort, reverse=False)
     
+    """
+    computes the local schur complement for the graph
+    """
+    def schur_complement(self, num_coarse, adjacency_matrix):
+        if num_coarse == 0:
+            raise ValueError("Number of coarse vertices must be greater than 0.")
+        
+        adjacency_matrix_laplacian = laplacian(adjacency_matrix, dtype=np.float64)
+        a11 = adjacency_matrix_laplacian[:num_coarse, :num_coarse]
+        a22 = adjacency_matrix_laplacian[num_coarse:, num_coarse:]
+        a21 = adjacency_matrix_laplacian[num_coarse:, :num_coarse]
+        a12 = adjacency_matrix_laplacian[:num_coarse, num_coarse:]
+
+        return a11 - (a12 @ np.linalg.inv(a22) @ a21)
+        #return a11 - a12 @ np.linalg.solve(a22, a21)
+
     def local_schur_complement(self):
         #needed
         adjacency_matrix = self.parent.vertex_list_to_adj_matrix(self.sorted_vertex_list, divide_edge_weights=True)

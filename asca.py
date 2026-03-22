@@ -1,13 +1,10 @@
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import cgs, cg
 from joblib import Parallel, delayed
 from datetime import datetime
-from enum import Enum
 
 import numpy as np
 import h5py
 
-import sys
 import graph
 import utils
 import time
@@ -43,7 +40,7 @@ class Asca:
         self.current_iteration = 0
     
     def run_approximation(self):
-        current_graph = graph.UniversalGraph.from_file(self.filename)
+        current_graph = graph.Graph(path=self.filename)
 
         for i in range(self.iterations):
 
@@ -77,7 +74,7 @@ class Asca:
             Q = abs(Q)
             indexes = (range(Q.shape[0]), range(Q.shape[1]))
             Q[indexes] = 0
-            current_graph = graph.UniversalGraph.from_csr(Q)
+            current_graph = graph.Graph(csr_matrix=Q)
 
     def calculate_subgraph_contribution(self, sub_graph):
         mapping = sub_graph.local_to_global_mapping()
