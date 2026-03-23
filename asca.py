@@ -51,7 +51,8 @@ class Asca:
             create_subgraphs_methods = {
                 "depth":current_graph.create_subgraphs_depth,
                 "moore_all":current_graph.create_subgraphs_moore_neighborhood_all,
-                "moore_coarse":current_graph.create_subgraphs_moore_neighborhood_around_coarse
+                "moore_coarse":current_graph.create_subgraphs_moore_neighborhood_around_coarse,
+                "macrostructure":current_graph.create_subgraphs_macrostructures
             }
 
             logging.info(f"ASCA Iteration {self.current_iteration} current size: {len(current_graph.vertex_list)}")
@@ -82,8 +83,9 @@ class Asca:
         temp = mapping @ schur_complement @ mapping.T
         return temp
 
-    def calculate_approximation(self, graph, coarse_selection_method, create_subgraphs_method):
+    def calculate_approximation(self, in_graph, coarse_selection_method, create_subgraphs_method):
         coarse_selection_method(**self.coarse_selection_method_arguments)
+
         start_time = time.time()
         logging.info(f"Coarse vertex selection took {time.time() - start_time} seconds.")
 
@@ -91,8 +93,10 @@ class Asca:
         create_subgraphs_method(**self.create_subgraphs_method_arguments)
         logging.info(f"Subgraph creation took {time.time() - start_time} seconds.")
 
+
+
         start_time = time.time()
-        l = graph.coarse_vertices_count
+        l = in_graph.coarse_vertices_count
         Q = csr_matrix((l, l), dtype=np.float64)
         
         generator = Parallel(
@@ -101,7 +105,7 @@ class Asca:
             return_as="generator"
         )(
             delayed(self.calculate_subgraph_contribution)
-            (subgraph) for subgraph in graph.get_subgraphs()
+            (subgraph) for subgraph in in_graph.get_subgraphs()
         )
         for contribution in generator:
             Q += contribution

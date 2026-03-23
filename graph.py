@@ -50,11 +50,14 @@ class Graph:
     name : str - name of the graph for visualization purposes
     """
     def __init__(self, 
+                 vertex_list : list[Vertex] = None,
                  csr_matrix : csr_matrix = None,
                  path : str = None
                  ):
         self.vertex_list = list()
-        if csr_matrix != None:
+        if vertex_list:
+            self.vertex_list = vertex_list
+        elif csr_matrix != None:
             coo_matrix_obj = csr_matrix.tocoo()
             self.vertex_list = self._vertex_list_from_coo(
                 coo_matrix_obj.row,
@@ -128,27 +131,29 @@ class Graph:
         if not vertex_list:
             return 0
 
-        neighbtor_set = set(vertex_list)
+        neighbor_set = set(vertex_list)
         mapping = {v: i for i, v in enumerate(vertex_list)}
 
         row = []
         col = []
         val = []
         for vertex in vertex_list:
-            id = mapping[vertex]
+            row_idx = mapping[vertex]
             for neighbor, weight in vertex.adj:
-                if neighbor not in neighbtor_set:
+                if neighbor not in neighbor_set:
                     continue
-                row.append(id)
+                row.append(row_idx)
                 col.append(mapping[neighbor])
                 if divide_edge_weights:
-                    val.append(weight / self.edge_count[(vertex.id, neighbor.id)])
+                    count = self.edge_count.get((vertex.id, neighbor.id), 1)
+                    val.append(weight / count)
                 else:
                     val.append(weight)
         # Build matrix
         shape = len(vertex_list)
         mat = np.zeros((shape, shape), dtype=np.float64)
-        mat[row, col] = val
+        for r, c, v in zip(row, col, val):
+            mat[r, c] += v
         return mat
     """
     computes the local schur complement for the graph
@@ -195,15 +200,19 @@ class Graph:
     @return coarse_vertices - set of coarse vertices
     """
     def select_coarse_mis(self, size = 1):
-        coarse_vertices = set()
-        remaining_vertices = set(self.vertex_list)
+        self.coarse_vertices = self.get_mis_set(self.vertex_list, size)
+        self.set_coarse(self.coarse_vertices)
+        return self.coarse_vertices
+
+    def get_mis_set(self, vertex_list, size):
+        mis_set = set()
+        remaining_vertices = set(vertex_list)
 
         while remaining_vertices:
             current = remaining_vertices.pop()
-            coarse_vertices.add(current)
+            mis_set.add(current)
             remaining_vertices.difference_update(self.get_neighbourhood(current, size=size))
-        self.set_coarse(coarse_vertices)
-        return coarse_vertices
+        return mis_set
 
     def select_coarse_moore_neighborhood(self, size = 1):
         coarse_vertices = set()
@@ -281,6 +290,44 @@ class Graph:
                 graph=self, 
                 name=f"SubGraph{iterator}"
             )
+    
+    def create_subgraphs_macrostructures(self, microstructure_size = 2, subgraph_structure_connectivity = 2, macrostructure_microstructure_inclusion_distance = 1):
+        subgraphs = dict()
+        subgraph_structure_mapping = {vertex : Vertex(vertex.id) for vertex in self.coarse_vertices}
+        subgraph_structure_mapping_reversed = {y : x for x, y in subgraph_structure_mapping.items()}
+
+        for vertex in self.coarse_vertices:
+            subgraphs[subgraph_structure_mapping[vertex]] = set(self.get_neighbourhood(vertex, microstructure_size))
+            visited = set({vertex})
+            depth = defaultdict(lambda: 1000)
+            depth[vertex] = 0
+            queue = deque([vertex])
+            
+            while queue:
+                current = queue.popleft()
+                if current.coarse:
+                    subgraph_structure_mapping[vertex].adj.append((subgraph_structure_mapping[current], 1))
+                for neighbor in current.get_adj():
+                    if depth[current] + 1 < depth[neighbor]:
+                        depth[neighbor] = depth[current] + 1
+                    
+                    if depth[current] >= subgraph_structure_connectivity or neighbor in visited:
+                        continue
+
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        macrostructure_centers = self.get_mis_set(subgraph_structure_mapping.values(), 1)
+
+        for i, vertex in enumerate(macrostructure_centers):
+            macrostructure = set()
+            macrostructure.update(subgraphs[vertex])
+            for neighbour in self.get_neighbourhood(vertex, size=macrostructure_microstructure_inclusion_distance):
+                macrostructure.update(subgraphs[neighbour])
+            subgraph_structure_mapping_reversed[vertex].graph = SubGraph(
+                vertex_list=macrostructure, 
+                graph=self, 
+                name=f"SubGraph{i}"
+            ) 
     """
     Return adjacents vertices of the root vertex to depth of size and edges of theese vertices
     """
