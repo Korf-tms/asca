@@ -2,6 +2,7 @@ from scipy.sparse import csr_matrix
 from joblib import Parallel, delayed
 from datetime import datetime
 
+import pathlib as pl
 import numpy as np
 import h5py
 
@@ -31,7 +32,8 @@ class Asca:
         now = datetime.now().strftime("%S-%M-%H_%d_%m_%y_log")
         logging.basicConfig(filename=f"{LOG_FOLDER}/{now}.log", filemode='w', level=logging.INFO)
 
-        self.filename = filename
+        self.path = filename
+        self.filename = pl.Path(filename).stem
         self.coarse_selection_method = coarse_selection_method
         self.coarse_selection_method_arguments = coarse_selection_method_arguments
         self.create_subgraphs_method = create_subgraphs_method
@@ -39,9 +41,16 @@ class Asca:
         self.iterations = iterations
     
     def run_approximation(self):
-        current_graph = graph.Graph(path=self.filename)
+        current_graph = graph.Graph(path=self.path)
 
-        for i in range(self.iterations):
+        with h5py.File(f"{DATA_FOLDER}/{self.filename}_data.hdf5", mode="a") as file:
+            iteration_group = file.require_group(f"iteration{0}")
+            approximation_group =  iteration_group.require_group(f"approximation")
+            approximation_group.create_dataset(f"data", data=Q.data)
+            approximation_group.create_dataset(f"indices", data=Q.indices)
+            approximation_group.create_dataset(f"indptr", data=Q.indptr)
+
+        for i in range(1, self.iterations + 1):
 
             coarse_selection_methods = {
                 "mis":current_graph.select_coarse_mis,
@@ -54,14 +63,14 @@ class Asca:
                 "macrostructure":current_graph.create_subgraphs_macrostructures
             }
 
-            logging.info(f"ASCA Iteration {self.current_iteration} current size: {len(current_graph.vertex_list)}")
+            logging.info(f"ASCA Iteration {i} current size: {len(current_graph.vertex_list)}")
 
             Q : csr_matrix = self.calculate_approximation(
                 current_graph, 
                 coarse_selection_methods[self.coarse_selection_method],
                 create_subgraphs_methods[self.create_subgraphs_method])
 
-            with h5py.File(f"{DATA_FOLDER}/data.hdf5", mode="a") as file:
+            with h5py.File(f"{DATA_FOLDER}/{self.filename}_data.hdf5", mode="a") as file:
                 iteration_group = file.require_group(f"iteration{i}")
                 approximation_group =  iteration_group.require_group(f"approximation")
                 approximation_group.create_dataset(f"data", data=Q.data)
@@ -73,7 +82,7 @@ class Asca:
             Q.setdiag(0)
             current_graph = graph.Graph(csr_matrix=Q)
 
-    def calculate_approximation(self, in_graph, coarse_selection_method, create_subgraphs_method):
+    def calculate_approximation(self, in_graph : graph.Graph, coarse_selection_method, create_subgraphs_method):
         
         #select coarse vertices
         start_time = time.time()
@@ -94,12 +103,11 @@ class Asca:
             prefer="threads",
             return_as="generator_unordered"
         )(
-            delayed(subgraph.get_contribution)
-            (subgraph) for subgraph in in_graph.get_subgraphs()
+            delayed(subgraph.get_contribution)()
+            for subgraph in in_graph.subgraph_list()
         )
 
         for contribution in generator:
             Q += contribution
         logging.info(f"Calculation took {time.time() - start_time} seconds.")
-
         return Q
