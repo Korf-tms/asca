@@ -12,6 +12,25 @@ import numpy as np
 import scipy.io as spio
 
 class Vertex:
+    pass
+class SubGraph:
+    pass
+
+class Edge:
+
+    def __init__(self, start : Vertex, end : Vertex, weight : int):
+        self.start : Vertex = start
+        self.end : Vertex = end
+        self.weight : int = weight
+        self.multiplicity : int = 0
+
+    def __hash__(self):
+        return hash((self.start, self.end))
+
+    def __eq__(self, other):
+        return ( isinstance(other, Edge) and self.start == other.start and self.end == other.end)
+
+class Vertex:
     """
     Vertex class
     id : int - unique identifier of the vertex
@@ -20,14 +39,17 @@ class Vertex:
     name : str - name of the vertex for visualization purposes
     graph : Subgraph - subgraph that belongs to the vertex. All the subgraphs are tied to a vertex.
     """
-    def __init__(self, id):
-        self.id = id
-        self.adj = []
-        self.coarse = False
-        self.graph = None
+    def __init__(self, id : int):
+        self.id : int = id
+        self.adj : set[Edge] = set()
+        self.coarse : bool = False
+        self.graph : SubGraph = None
     
     def get_adj(self):
-        return [neighbor for neighbor, _ in self.adj]
+        return [edge.end for edge in self.adj]
+    
+    def get_in_subgrah(self, subgraph : set[Vertex]):
+        return {edge for edge in self.adj if edge.end in subgraph}
 
     def __str__(self):
         return f"Vertex: {self.id}"
@@ -88,7 +110,7 @@ class Graph:
         for row, col, val in zip(rows, cols, values):
             vertex_row = vertex_dictionary[int(row)]
             vertex_col = vertex_dictionary[int(col)]
-            vertex_row.adj.append((vertex_col, val))
+            vertex_row.adj.add(Edge(vertex_row, vertex_col, val))
 
         return list(vertex_dictionary.values())
     
@@ -127,7 +149,7 @@ class Graph:
     """
     Creates adjacency matrix from given vertex list, the order of vertex list matters.
     """
-    def vertex_list_to_adj_matrix(self, vertex_list, divide_edge_weights = False):
+    def vertex_list_to_adj_matrix(self, vertex_list : list[Vertex], divide_edge_weights = False):
         if not vertex_list:
             return 0
 
@@ -139,17 +161,16 @@ class Graph:
         val = []
         for vertex in vertex_list:
             row_idx = mapping[vertex]
-            for neighbor, weight in vertex.adj:
-                if neighbor not in neighbor_set:
+            for edge in vertex.adj:
+                if edge.end not in neighbor_set:
                     continue
                 row.append(row_idx)
-                col.append(mapping[neighbor])
+                col.append(mapping[edge.end])
                 if divide_edge_weights:
-                    count = self.edge_count.get((vertex.id, neighbor.id), 1)
-                    val.append(weight / count)
+                    val.append(edge.weight / edge.multiplicity)
                 else:
-                    val.append(weight)
-        # Build matrix
+                    val.append(edge.weight)
+
         shape = len(vertex_list)
         mat = np.zeros((shape, shape), dtype=np.float64)
         for r, c, v in zip(row, col, val):
@@ -200,8 +221,7 @@ class Graph:
     @return coarse_vertices - set of coarse vertices
     """
     def select_coarse_mis(self, size = 1):
-        self.coarse_vertices = self.get_mis_set(self.vertex_list, size)
-        self.set_coarse(self.coarse_vertices)
+        self.set_coarse(self.get_mis_set(self.vertex_list, size))
         return self.coarse_vertices
 
     def get_mis_set(self, vertex_list, size):
@@ -223,7 +243,7 @@ class Graph:
                 continue
             
             coarse_vertices.add(vertex)
-            visited.update(self.get_neighborhood_by_connectivity(vertex, size)[0])
+            visited.update(self.get_neighborhood_by_connectivity(vertex, size))
                 
         self.set_coarse(coarse_vertices)
         return coarse_vertices
@@ -240,41 +260,43 @@ class Graph:
     """
     Creates subgraphs around each coarse vertex with given depth.
     """
-    def create_subgraphs_moore_neighborhood_around_coarse(self, size=1):
-        for iterator, vertex in enumerate(self.coarse_vertices):
+    def get_moore_subgraph(self, vertices, size):
+        for vertex in vertices:
             degree = len(vertex.get_adj())
-            keys = set()
             if degree <= 4:
-                subgraph_vertex_list, keys = self.get_neighborhood_by_connectivity(vertex, size)
-            
+                yield vertex, self.get_neighborhood_by_connectivity(vertex, size)
             else:
-                subgraph_vertex_list, keys = self.get_neighbourhood_with_edges(vertex, size=size)
-            self.edge_count.update(keys)
-            #graphs with less that 3 coarse vertices are not useful
-            if len([vertex for vertex in subgraph_vertex_list if vertex.coarse]) < 3:
+                yield vertex, self.get_neighbourhood(vertex, size=size)
+                
+    def create_subgraphs_moore_neighborhood_around_coarse(self, size=1):
+        for iterator, (vertex, subgraph) in enumerate(self.get_moore_subgraph(self.coarse_vertices, size)):
+            if len([vertex for vertex in subgraph if vertex.coarse]) < 3:
                 continue
+            vertex.graph = SubGraph(vertex_list=subgraph, graph=self, name=f"SubGraph{iterator}")
 
-            vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
+            edges = set()
+            for v in subgraph:
+                edges.update(v.get_in_subgrah(subgraph))
+            for edge in edges:
+                edge.multiplicity += 1
     """
     Creates the maximum possible number of subgraphs,
     size = 1 means one vertice in each direction.
     """
-    def create_subgraphs_moore_neighborhood_all(self, size = 1):
-        for iterator, vertex in enumerate(self.vertex_list):
-            degree = len(vertex.get_adj())
-            keys = set()
-            if degree <= 4:
-                subgraph_vertex_list, keys = self.get_neighborhood_by_connectivity(vertex, size)
-            
-            else:
-                subgraph_vertex_list, keys = self.get_neighbourhood_with_edges(vertex, size=size)
-            self.edge_count.update(keys)
-            #graphs with less that 3 coarse vertices are not useful
-            if len([vertex for vertex in subgraph_vertex_list if vertex.coarse]) < 3:
+    def create_subgraphs_moore_neighborhood_all(self, size=1):
+        for iterator, (vertex, subgraph) in enumerate(self.get_moore_subgraph(self.vertex_list, size)):
+            if len([vertex for vertex in subgraph if vertex.coarse]) < 3:
                 continue
+            vertex.graph = SubGraph(vertex_list=subgraph, graph=self, name=f"SubGraph{iterator}")
 
-            vertex.graph = SubGraph(vertex_list=subgraph_vertex_list, graph=self, name=f"SubGraph{iterator}")
-
+            edges = set()
+            for v in subgraph:
+                edges.update(v.get_in_subgrah(subgraph))
+            for edge in edges:
+                edge.multiplicity += 1
+    def get_depth_subgraph(self, vertices, max_depth):
+        for vertex in vertices:
+            yield vertex, self.get_neighbourhood(vertex, size=max_depth)
     """
     Creates subgraphs around each coarse vertex with given depth.
     """
@@ -282,14 +304,19 @@ class Graph:
         if max_depth < 1:
             raise ValueError("Max depth must be at least 1.")
 
-        for iterator, vertex in enumerate(self.coarse_vertices):
-            vertex_list, edge_list = self.get_neighbourhood_with_edges(vertex, size=max_depth)
-            self.edge_count.update(edge_list)
+        for iterator, (vertex, subgraph) in enumerate(self.get_depth_subgraph(self.coarse_vertices, max_depth)):
             vertex.graph = SubGraph(
-                vertex_list=vertex_list, 
+                vertex_list=subgraph, 
                 graph=self, 
                 name=f"SubGraph{iterator}"
             )
+
+            edges = set()
+            for v in subgraph:
+                edges.update(v.get_in_subgrah(subgraph))
+            for edge in edges:
+                edge.multiplicity += 1
+
     
     def create_subgraphs_macrostructures(self, microstructure_size = 2, subgraph_structure_connectivity = 2, macrostructure_microstructure_inclusion_distance = 1):
         subgraphs = dict()
@@ -306,7 +333,7 @@ class Graph:
             while queue:
                 current = queue.popleft()
                 if current.coarse:
-                    subgraph_structure_mapping[vertex].adj.append((subgraph_structure_mapping[current], 1))
+                    subgraph_structure_mapping[vertex].adj.add(Edge(subgraph_structure_mapping[vertex], subgraph_structure_mapping[current], 1))
                 for neighbor in current.get_adj():
                     if depth[current] + 1 < depth[neighbor]:
                         depth[neighbor] = depth[current] + 1
@@ -329,50 +356,23 @@ class Graph:
                 name=f"SubGraph{i}"
             ) 
     """
-    Return adjacents vertices of the root vertex to depth of size and edges of theese vertices
-    """
-    def get_neighbourhood_with_edges(self, vertex, size = 1):
-        visited = set({vertex})
-        keys = set()
-        depth = defaultdict(lambda: 1000)
-        depth[vertex] = 0
-        queue = deque([vertex])
-        
-        while queue:
-            current = queue.popleft()
-            for neighbor in current.get_adj():
-                if depth[current] + 1 < depth[neighbor]:
-                    depth[neighbor] = depth[current] + 1
-
-                if depth[neighbor] <= size:
-                    keys.add((current.id, neighbor.id))
-                
-                if depth[current] >= size or neighbor in visited:
-                    continue
-
-                visited.add(neighbor)
-                queue.append(neighbor)
-
-        return (list(visited), keys)
-    """
     Returns adjacents vertices of the root vertex to depth of size
     """
     def get_neighbourhood(self, vertex, size = 1):
         selected_vertices = set({vertex})
         for _ in range(size):
             selected_vertices.update(*(v.get_adj() for v in selected_vertices))
-        return list(selected_vertices)
+        return selected_vertices
     """
     Returns adjacents vertices of the root vertex to depth of size + vertices that have at least size adjacents to the selected vertices
     """
     def get_neighborhood_by_connectivity(self, vertex, size = 1):
         visited = set({vertex})
-        keys = set()
         depth = dict()
         depth[vertex] = 0
         queue = deque([vertex])
         size += 1
-        
+
         while queue:
             current = queue.popleft()
             for neighbor in current.get_adj():
@@ -385,9 +385,6 @@ class Graph:
 
                 if neighbor_depth == size and len(set(neighbor.get_adj()).intersection(visited)) <= 1:
                     continue
-
-                if neighbor_depth <= size:
-                    keys.add((current.id, neighbor.id))
                 
                 if current_depth >= size or neighbor in visited:
                     continue
@@ -395,7 +392,7 @@ class Graph:
                 visited.add(neighbor)
                 queue.append(neighbor)
 
-        return (list(visited), keys)
+        return visited
 
     def get_subgraphs(self):
         return [vertex.graph for vertex in self.vertex_list if vertex.graph != None]
@@ -437,6 +434,12 @@ class SubGraph():
         schur_complement = self.schur_complement(self.coarse_vertices_count, adjacency_matrix)
         return csr_matrix(schur_complement, dtype=np.float64)
     
+    def get_contribution(self):
+        mapping = self.local_to_global_mapping()
+        schur_complement = self.local_schur_complement()
+        temp = mapping @ schur_complement @ mapping.T
+        return temp
+
     def local_to_global_mapping(self):
         coarse = self.sorted_vertex_list[:self.coarse_vertices_count]
 
