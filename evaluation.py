@@ -1,47 +1,75 @@
-#read the approximation data
-#calculate schurs complement on the original graph
-#do shenanigans
-'''
-def evaluate_approximation():
-    # cg needs semi positive definite matrix, even small negatives make issues
-    approximation = self.current_approximation + np.eye(self.current_approximation.shape[0]) * 1e-5
-    schur = self.current_graph.local_schur_complement() + np.eye(self.current_approximation.shape[0]) * 1e-5
+from scipy.sparse import csr_matrix, eye, diags
+from scipy.sparse.linalg import spsolve, eigsh, cgs, LinearOperator, eigs
+
+import pathlib as pl
+import numpy as np
+import h5py
+import matplotlib.pyplot as plt
+
+class Evaluator:
+    def __init__(self, path : str):
+        self.path = pl.Path(path)
+        if not self.path.exists():
+            raise ValueError("File doesnt exist.")
+
+    def _get_iteratios(self):
+        with h5py.File(self.path, mode="r") as file:
+            iterations = []
+            for key in file.keys():
+                if key.startswith("iteration"):
+                    iterations.append(int(key.replace("iteration", "")))
+            iterations = sorted(i for i in iterations if i != 0)
+            return iterations
+
+    def _read_matrix(self, key):
+        with h5py.File(self.path, mode="r") as file:
+            if key not in file:
+                raise ValueError("Key not found.")
+            matrix = file[key]
+            data = matrix["data"][:]
+            indices = matrix["indices"][:]
+            indptr = matrix["indptr"][:]
+            shape = tuple(matrix["shape"][:])
+            return csr_matrix((data, indices, indptr), shape=shape, dtype=np.float64)
+
+    def _read_iteration(self, iteration: int) -> csr_matrix:
+        return self._read_matrix(f"iteration{iteration}")
+
+    def _get_schur_complement(self):
+        adj_mat = self._read_matrix(f"adj_matrix")
+        coarse_count = 0
+        with h5py.File(self.path, mode="r") as file:
+            coarse_count = int(file["adj_matrix/coarse_count"][()])
         
-    self.file = h5py.File("data/analysis.hdf5", mode="w")
-    group = self.file.require_group(f"iteration{self.current_iteration}")
-    group.create_dataset(f"asca", data=approximation)
-    group.create_dataset(f"schur_complement", data=schur)
-    group.create_dataset(f"difference", data=schur - approximation)
+        degrees = np.asarray(adj_mat.sum(axis=1)).ravel()
+        graph_laplacian = diags(degrees, format="csr") - adj_mat
+        l_11 = graph_laplacian[:coarse_count, :coarse_count]
+        l_22 = graph_laplacian[coarse_count:, coarse_count:].tocsc()
+        l_21 = graph_laplacian[coarse_count:, :coarse_count].tocsc()
+        l_12 = graph_laplacian[:coarse_count, coarse_count:]
 
-    tolerance = 1e-5
-    logging.info(f"Matrix symetry check of approximation with tolerance {tolerance}: {np.allclose(approximation, approximation.T, rtol=tolerance, atol=tolerance)}")
-    logging.info(f"Matrix symetry check of schur complement with tolerance {tolerance}: {np.allclose(schur, schur.T, rtol=tolerance, atol=tolerance)}")
-    sdp_approximation = np.all(np.linalg.eigvalsh(approximation) >= 0)
-    logging.info(f"Positive semi-definite check approximation: {sdp_approximation}")
-    spd_schur = np.all(np.linalg.eigvalsh(schur) >= 0)
-    logging.info(f"Positive semi-definite check schur complement: {spd_schur}")
+        return csr_matrix(l_11 - l_12 @ spsolve(l_22, l_21))
 
-     if not sdp_approximation or not spd_schur:
-         logging.warning("Matrix is not positive semi-definite, cg might not converge.")
+    def cgs_evaluation(self, iteration : list[int] = []):
+        iterations = iteration if iteration else self._get_iteratios()
+        for current_iteration in iterations:
+            last_matrix = self._read_iteration(current_iteration - 1) if current_iteration != 1 else self._get_schur_complement()
+            current_matrix = self._read_iteration(current_iteration)
 
-    self.cgs_iterations = 0
+            last_matrix = last_matrix + eye(last_matrix.shape[0]) * 1e-5
+            current_matrix = current_matrix + eye(current_matrix.shape[0]) * 1e-5
 
-    b = np.random.rand(approximation.shape[0], 1)
-    x, info = cgs(
-        A=schur, 
-        M=approximation, 
-        b=b,
-        callback=self.cgs_callback
-        )
-    logging.info(f"Return value of cgs x: {x}, info: {info}")
-    self.file.close()
-    logging.info(f"Number of iterations of cgs: {self.cgs_iterations}")
+            current_matrix_inv = LinearOperator(
+                shape=current_matrix.shape,
+                matvec=lambda x: spsolve(current_matrix, x),
+                dtype=np.float64
+            )
 
-    logging.info(f"Final solution vector: {schur @ x}")
-    logging.info(f"Final approximation solution vector: {b}")
-
-def cgs_callback(self, solution_vector):
-    group = self.file.require_group(f"iteration{self.current_iteration}")
-    group = group.require_group(f"cgs_iterations")
-    group.create_dataset(f"cgs_solution_{self.cgs_iterations}", data=solution_vector)
-    self.cgs_iterations += 1'''
+            b = np.random.rand(current_matrix.shape[0])
+            x, info = cgs(
+                A=last_matrix, 
+                M=current_matrix_inv,
+                b=b,
+                )
+            
+            return info

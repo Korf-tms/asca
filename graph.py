@@ -1,6 +1,5 @@
-from scipy.sparse.csgraph import laplacian
 from collections import deque
-from scipy.sparse import coo_matrix, csr_matrix
+from scipy.sparse import coo_matrix, csr_matrix, csc_matrix, diags
 from scipy.sparse.linalg import spsolve
 from collections import Counter, defaultdict
 
@@ -122,7 +121,7 @@ class Graph:
         with h5py.File(path, "r") as file:
             if "coo_matrix" in file:
                 group = file["coo_matrix"]
-                return Graph._vertex_list_from_coo(group["row"], group["col"], group["val"])
+                return Graph._vertex_list_from_coo(group["row"][:], group["col"][:], group["val"][:])
             elif "adj_matrix" in file:
                 adj = coo_matrix(file["adj_matrix"])
                 return Graph._vertex_list_from_coo(adj.row, adj.col, adj.data)
@@ -168,6 +167,27 @@ class Graph:
     def select_coarse_mis(self, size = 1):
         self.set_coarse(self.get_mis_set(self.vertex_list, size))
         return self.coarse_vertices
+
+    def vertex_list_to_adj_matrix(self):
+        vertex_list = sorted(self.vertex_list, key=self.vertice_sort)
+        neighbor_set = set(vertex_list)
+        mapping = {v: i for i, v in enumerate(vertex_list)}
+
+        row = []
+        col = []
+        val = []
+        for vertex in vertex_list:
+            row_idx = mapping[vertex]
+            for edge in vertex.adj:
+                if edge.end not in neighbor_set:
+                    continue
+                row.append(row_idx)
+                col.append(mapping[edge.end])
+                val.append(edge.weight)
+
+        shape = len(vertex_list)
+        mat = csr_matrix((val, (row, col)), shape=(shape, shape), dtype=np.float64)
+        return mat
 
     def get_mis_set(self, vertex_list, size):
         mis_set = set()
@@ -262,7 +282,6 @@ class Graph:
     def create_subgraphs_macrostructures(self, microstructure_size = 2, subgraph_structure_connectivity = 2, macrostructure_microstructure_inclusion_distance = 1):
         subgraphs = dict()
         subgraph_structure_mapping = {vertex : Vertex(vertex.id) for vertex in self.coarse_vertices}
-        subgraph_structure_mapping_reversed = {y : x for x, y in subgraph_structure_mapping.items()}
 
         for vertex in self.coarse_vertices:
             subgraphs[subgraph_structure_mapping[vertex]] = set(self.get_neighbourhood(vertex, microstructure_size))
@@ -351,10 +370,11 @@ class SubGraph():
         if num_coarse <= 0:
             raise ValueError("Number of coarse vertices must be greater than 0.")
         
-        graph_laplacian = laplacian(adjacency_matrix, dtype=np.float64)
+        degrees = np.asarray(adjacency_matrix.sum(axis=1)).ravel()
+        graph_laplacian = diags(degrees, format="csr") - adjacency_matrix
         l_11 = graph_laplacian[:num_coarse, :num_coarse]
-        l_22 = graph_laplacian[num_coarse:, num_coarse:]
-        l_21 = graph_laplacian[num_coarse:, :num_coarse]
+        l_22 = graph_laplacian[num_coarse:, num_coarse:].tocsc()
+        l_21 = graph_laplacian[num_coarse:, :num_coarse].tocsc()
         l_12 = graph_laplacian[:num_coarse, num_coarse:]
 
         return l_11 - l_12 @ spsolve(l_22, l_21)

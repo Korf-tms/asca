@@ -11,8 +11,6 @@ import utils
 import time
 import logging
 
-logger = logging.getLogger(__name__)
-
 LOG_FOLDER = "logs"
 DATA_FOLDER = "data"
 
@@ -40,15 +38,14 @@ class Asca:
         self.create_subgraphs_method_arguments = create_subgraphs_method_arguments
         self.iterations = iterations
     
+    def store_csr_matrix(self, gorup : h5py.Group, matrix : csr_matrix):
+        gorup.create_dataset("data", data=matrix.data)
+        gorup.create_dataset("indices", data=matrix.indices)
+        gorup.create_dataset("indptr", data=matrix.indptr)
+        gorup.create_dataset("shape", data=matrix.shape)
+
     def run_approximation(self):
         current_graph = graph.Graph(path=self.path)
-
-        with h5py.File(f"{DATA_FOLDER}/{self.filename}_data.hdf5", mode="a") as file:
-            iteration_group = file.require_group(f"iteration{0}")
-            approximation_group =  iteration_group.require_group(f"approximation")
-            approximation_group.create_dataset(f"data", data=Q.data)
-            approximation_group.create_dataset(f"indices", data=Q.indices)
-            approximation_group.create_dataset(f"indptr", data=Q.indptr)
 
         for i in range(1, self.iterations + 1):
 
@@ -71,11 +68,13 @@ class Asca:
                 create_subgraphs_methods[self.create_subgraphs_method])
 
             with h5py.File(f"{DATA_FOLDER}/{self.filename}_data.hdf5", mode="a") as file:
+                if i == 1:
+                    adj_mat = current_graph.vertex_list_to_adj_matrix()
+                    adj_matrix_group = file.require_group(f"adj_matrix")
+                    self.store_csr_matrix(adj_matrix_group, adj_mat)
+                    adj_matrix_group.create_dataset("coarse_count", data=current_graph.coarse_vertices_count)
                 iteration_group = file.require_group(f"iteration{i}")
-                approximation_group =  iteration_group.require_group(f"approximation")
-                approximation_group.create_dataset(f"data", data=Q.data)
-                approximation_group.create_dataset(f"indices", data=Q.indices)
-                approximation_group.create_dataset(f"indptr", data=Q.indptr)
+                self.store_csr_matrix(iteration_group, Q)
 
             #getting the adj matrix out of the Laplacian
             Q = abs(Q)
@@ -104,7 +103,7 @@ class Asca:
             return_as="generator_unordered"
         )(
             delayed(subgraph.get_contribution)()
-            for subgraph in in_graph.subgraph_list()
+            for subgraph in in_graph.subgraph_list
         )
 
         for contribution in generator:
