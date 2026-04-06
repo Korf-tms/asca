@@ -1,5 +1,5 @@
 from collections import deque
-from scipy.sparse import coo_matrix, csr_matrix, csc_matrix, diags
+from scipy.sparse import coo_matrix, csr_matrix, csc_matrix, diags, issparse
 from scipy.sparse.linalg import spsolve
 from collections import Counter, defaultdict
 
@@ -143,6 +143,25 @@ class Graph:
         coo_adj = adj.tocoo()
         return Graph._vertex_list_from_coo(coo_adj.row, coo_adj.col, coo_adj.data)
     
+    """
+    Loads adjacency matrix from .mtx file, handles both sparse and dense case,
+    although very crudely.
+    """
+    @staticmethod  
+    def _vertex_list_from_mtx(path):
+        adj_mat = spio.mmread(path)
+       
+        # Handle both sparse and dense matrices
+        if issparse(adj_mat):
+            # Convert to COO format if not already
+            coo_adj_mat = adj_mat.tocoo() if not isinstance(adj_mat, coo_matrix) else adj_mat
+        else:
+            # Dense matrix -> convert to sparse COO format
+            coo_adj_mat = coo_matrix(adj_mat)
+            
+        return Graph._vertex_list_from_coo(coo_adj_mat.row, coo_adj_mat.col,coo_adj_mat.data)
+
+
     """
     Sets coarse vertices and creates mapping, that is used in schur complement by the subgraphs
     """
