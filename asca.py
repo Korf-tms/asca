@@ -21,23 +21,25 @@ class Asca:
         coarse_selection_method_arguments={"size":1}, 
         create_subgraphs_method="depth", 
         create_subgraphs_method_arguments={"max_depth":2},
+        output_file=None,
         store_contributions=False,
         iterations=1):
-        
-        utils.clear_folder_or_create(LOG_FOLDER)
-        utils.clear_folder_or_create(DATA_FOLDER)
 
         now = datetime.now().strftime("%S-%M-%H_%d_%m_%y_log")
         logging.basicConfig(filename=f"{LOG_FOLDER}/{now}.log", filemode='w', level=logging.INFO)
 
+        utils.create_folder(DATA_FOLDER)
+        utils.create_folder(LOG_FOLDER)
+
         self.path = filename
         self.filename = pl.Path(filename).stem
+        self.output_file = utils.get_unique_path(self.filename, output_file=output_file, data_folder=DATA_FOLDER, name="data")
         self.coarse_selection_method = coarse_selection_method
         self.coarse_selection_method_arguments = coarse_selection_method_arguments
         self.create_subgraphs_method = create_subgraphs_method
         self.create_subgraphs_method_arguments = create_subgraphs_method_arguments
         self.iterations = iterations
-    
+
     def store_csr_matrix(self, gorup : h5py.Group, matrix : csr_matrix):
         gorup.create_dataset("data", data=matrix.data)
         gorup.create_dataset("indices", data=matrix.indices)
@@ -67,7 +69,7 @@ class Asca:
                 coarse_selection_methods[self.coarse_selection_method],
                 create_subgraphs_methods[self.create_subgraphs_method])
 
-            with h5py.File(f"{DATA_FOLDER}/{self.filename}_data.hdf5", mode="a") as file:
+            with h5py.File(self.output_file, mode="a") as file:
                 if i == 1:
                     adj_mat = current_graph.vertex_list_to_adj_matrix()
                     adj_matrix_group = file.require_group(f"adj_matrix")
@@ -77,8 +79,9 @@ class Asca:
                 self.store_csr_matrix(iteration_group, Q)
 
             #getting the adj matrix out of the Laplacian
-            Q = abs(Q)
+            Q = -Q
             Q.setdiag(0)
+            Q.eliminate_zeros()
             current_graph = graph.Graph(csr_matrix=Q)
 
     def calculate_approximation(self, in_graph : graph.Graph, coarse_selection_method, create_subgraphs_method):
