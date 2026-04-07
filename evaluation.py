@@ -7,10 +7,17 @@ import h5py
 import utils
 from asca import DATA_FOLDER
 
+
 class Evaluator:
-    def __init__(self, input_file : str, output_file : str = None):
+    def __init__(self, input_file: str, output_file: str = None):
         self.input_file = pl.Path(input_file)
-        self.output_file = utils.get_unique_path(self.input_file.stem, output_file=output_file, data_folder=DATA_FOLDER, name="evaluation", suffix="hdf5")
+        self.output_file = utils.get_unique_path(
+            self.input_file.stem,
+            output_file=output_file,
+            data_folder=DATA_FOLDER,
+            name="evaluation",
+            suffix="hdf5",
+        )
         if not self.input_file.exists():
             raise ValueError("File doesnt exist.")
 
@@ -23,11 +30,11 @@ class Evaluator:
             iterations = sorted(i for i in iterations if i != 0)
             return iterations
 
-    def _read_matrix(self, key : str) -> csr_matrix:
+    def _read_matrix(self, key: str) -> csr_matrix:
         with h5py.File(self.input_file, mode="r") as file:
             if key not in file:
                 raise ValueError("Key not found.")
-            
+
             matrix = file[key]
             data = matrix["data"][:]
             indices = matrix["indices"][:]
@@ -45,7 +52,7 @@ class Evaluator:
 
         with h5py.File(self.input_file, mode="r") as file:
             coarse_count = int(file["adj_matrix/coarse_count"][()])
-        
+
         degrees = np.asarray(adj_mat.sum(axis=1)).ravel()
         graph_laplacian = diags(degrees, format="csr") - adj_mat
 
@@ -69,29 +76,35 @@ class Evaluator:
                 else:
                     group.create_dataset(key, data=np.asarray(value))
 
-    def cgs_evaluation(self, iteration : list[int] = None):
+    def cgs_evaluation(self, iteration: list[int] = None):
         iterations = iteration if iteration else self._get_iterations()
-        
+
         for current_iteration in iterations:
-            last_matrix = self._read_iteration(current_iteration - 1) if current_iteration != 1 else self._get_schur_complement()
+            last_matrix = (
+                self._read_iteration(current_iteration - 1)
+                if current_iteration != 1
+                else self._get_schur_complement()
+            )
             current_matrix = self._read_iteration(current_iteration)
 
             last_matrix = last_matrix + eye(last_matrix.shape[0], format="csr") * 1e-5
-            current_matrix = current_matrix + eye(current_matrix.shape[0], format="csr") * 1e-5
+            current_matrix = (
+                current_matrix + eye(current_matrix.shape[0], format="csr") * 1e-5
+            )
 
             current_matrix_inv = LinearOperator(
                 shape=current_matrix.shape,
                 matvec=lambda x: spsolve(current_matrix, x),
-                dtype=np.float64
+                dtype=np.float64,
             )
 
             b = np.random.rand(current_matrix.shape[0])
             x, info = cgs(
-                A=last_matrix, 
+                A=last_matrix,
                 M=current_matrix_inv,
                 b=b,
-                )
-            
+            )
+
             self._write_iteration_data(
                 current_iteration,
                 {
@@ -100,18 +113,19 @@ class Evaluator:
                     "cgs_iterations": info,
                 },
             )
-            
-    def eigsh_evaluation(self, iteration : list[int] = []):
+
+    def eigsh_evaluation(self, iteration: list[int] = []):
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            last_matrix = self._read_iteration(current_iteration - 1) if current_iteration != 1 else self._get_schur_complement()
+            last_matrix = (
+                self._read_iteration(current_iteration - 1)
+                if current_iteration != 1
+                else self._get_schur_complement()
+            )
             current_matrix = self._read_iteration(current_iteration)
 
-            eigenvalues, eigenvectors = eigsh(
-                A=last_matrix,
-                M=current_matrix
-            )
+            eigenvalues, eigenvectors = eigsh(A=last_matrix, M=current_matrix)
 
             self._write_iteration_data(
                 current_iteration,
