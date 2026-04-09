@@ -125,6 +125,11 @@ class Evaluator:
             )
             current_matrix = self._read_iteration(current_iteration)
 
+            last_matrix = last_matrix + eye(last_matrix.shape[0], format="csr") * 1e-5
+            current_matrix = (
+                current_matrix + eye(current_matrix.shape[0], format="csr") * 1e-5
+            )
+
             eigenvalues, eigenvectors = eigsh(A=last_matrix, M=current_matrix)
 
             self._write_iteration_data(

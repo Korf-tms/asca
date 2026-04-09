@@ -62,7 +62,7 @@ class Asca:
         self.iterations = iterations
 
     def run_approximation(self):
-        current_graph = graph_io.from_hdf5(path=self.path, cls=OriginalGraph)
+        current_graph = graph_io.from_file(path=self.path, cls=OriginalGraph)
 
         for i in range(1, self.iterations + 1):
 
@@ -74,7 +74,7 @@ class Asca:
 
             with h5py.File(self.output_file, mode="a") as file:
                 if i == 1:
-                    adj_mat = current_graph.to_adj_matrix()
+                    adj_mat = current_graph.to_adj_matrix(sorting=current_graph.vertex_sort)
                     adj_matrix_group = file.require_group("adj_matrix")
                     utils.store_csr_matrix(adj_matrix_group, adj_mat)
                     adj_matrix_group.create_dataset(

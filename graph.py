@@ -6,42 +6,52 @@ from numpy import float64
 
 class Edge:
 
-    def __init__(self, start: Vertex, end: Vertex, weight: int):
-        self.start: Vertex = start
-        self.end: Vertex = end
-        self.weight: int = weight
-        self.multiplicity: int = 0
+    """
+    Class representing an unordered edge connecting tow vertices.
+
+    Attributes
+    ----------
+    vertices : set[Vertex]
+
+    """
+    def __init__(self, first: Vertex, second: Vertex, weight: int):
+        if first == second:
+            raise ValueError("Self loops are not supported.")
+
+        self.first = first
+        self.second = second
+        self.weight = weight
+        self.multiplicity = 0
+        self._unique = frozenset((self.first, self.second))
 
     def __hash__(self):
-        return hash((self.start, self.end))
+        return hash(self._unique)
 
     def __eq__(self, other):
         return (
             isinstance(other, Edge)
-            and self.start == other.start
-            and self.end == other.end
+            and self._unique == other._unique
         )
+
+    def get_other(self, vertex: Vertex) -> Vertex:
+        if vertex == self.first:
+            return self.second
+        if vertex == self.second:
+            return self.first
+        raise ValueError("Vertex not in edge.")
+        
 
 
 class Vertex:
-    """
-    Vertex class
-    id : int - unique identifier of the vertex
-    adj : list - list of adjacent vertices in format (vertex, weight)
-    coarse : bool - if tis vertex is coarse
-    name : str - name of the vertex for visualization purposes
-    graph : Subgraph - subgraph that belongs to the vertex. All the subgraphs are tied to a vertex.
-    """
-
     def __init__(self, id: int):
         self.id: int = id
         self.adj: set[Edge] = set()
 
     def get_adj(self) -> set[Vertex]:
-        return {edge.end for edge in self.adj}
+        return {edge.get_other(self) for edge in self.adj}
 
     def get_in_subgraph(self, subgraph: set[Vertex]) -> set[Edge]:
-        return {edge for edge in self.adj if edge.end in subgraph}
+        return {edge for edge in self.adj if edge.get_other(self) in subgraph}
 
     def __str__(self):
         return f"Vertex: {self.id}"
@@ -57,14 +67,6 @@ class Vertex:
 
 
 class Graph:
-    """
-    Base graph class
-    vertex_list : list of Vertex obejects - main representation of the graph
-    edge_count : dict - counts how many subgraphs each edge is part of
-    coarse_vertices : list - list of coarse vertices in the graph, is populated after one of the select_coarse methods is called
-    name : str - name of the graph for visualization purposes
-    """
-
     def __init__(self, vertex_list: set[Vertex] | list[Vertex], name: str = "Graph"):
         self.vertex_list: set[Vertex] = set(vertex_list)
         self.name = name
@@ -87,10 +89,11 @@ class Graph:
         for vertex in vertex_list:
             row_idx = mapping[vertex]
             for edge in vertex.adj:
-                if edge.end not in neighbor_set:
+                connected = edge.get_other(vertex)
+                if connected not in neighbor_set:
                     continue
                 row.append(row_idx)
-                col.append(mapping[edge.end])
+                col.append(mapping[connected])
                 val.append(
                     edge.weight if not divide_edges else edge.weight / edge.multiplicity
                 )

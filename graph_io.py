@@ -2,9 +2,24 @@ from scipy.sparse import coo_matrix, issparse
 import pandas as pd
 import h5py
 import scipy.io as spio
+import pathlib as pl
 
 from graph import Edge, Graph, Vertex
 
+
+def from_file(path: str | pl.Path, cls=Graph):
+    actual_path = pl.Path(path)
+    if not actual_path.exists():
+        raise ValueError("File does not exist.")
+    
+    if actual_path.suffix == ".csv":
+        return from_csv(path, cls)
+    if actual_path.suffix == ".hdf5":
+        return from_hdf5(path, cls)
+    if actual_path.suffix == ".mat":
+        return from_mat(path, cls)
+    if actual_path.suffix == ".mtx":
+        return from_mtx(path, cls)
 
 def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=Graph):
     """
@@ -66,11 +81,14 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
     vertex_dictionary = {i: Vertex(i) for i in range(n)}
 
     for row, col, val in zip(rows, cols, values):
+        if row >= col:
+            continue
         vertex_row = vertex_dictionary[int(row)]
         vertex_col = vertex_dictionary[int(col)]
-        vertex_row.adj.add(Edge(vertex_row, vertex_col, val))
-
-    return cls(list(vertex_dictionary.values()))
+        edge = Edge(vertex_row, vertex_col, val)
+        vertex_row.adj.add(edge)
+        vertex_col.adj.add(edge)
+    return cls(set(vertex_dictionary.values()))
 
 
 def from_csv(path, cls=Graph):
@@ -78,9 +96,9 @@ def from_csv(path, cls=Graph):
     Load a graph from a CSV file containing COO-format data.
 
     The CSV file must contain columns:
-        - 'row'
-        - 'col'
-        - 'val'
+        - row
+        - col
+        - val
 
     Parameters
     ----------
@@ -102,8 +120,8 @@ def from_hdf5(path, cls=Graph):
     Load a graph from an HDF5 file.
 
     Supported formats inside the file:
-        - 'coo_matrix' group with datasets 'row', 'col', 'val'
-        - 'adj_matrix' dataset (dense or sparse)
+        - coo_matrix group with datasets row, col, val
+        - adj_matrix dataset (dense or sparse)
 
     Parameters
     ----------
@@ -128,7 +146,7 @@ def from_hdf5(path, cls=Graph):
 
         else:
             raise ValueError(
-                f"HDF5 file {path} does not contain 'coo_matrix' or 'adj_matrix'."
+                f"HDF5 file {path} does not contain coo_matrix or adj_matrix."
             )
 
 
@@ -153,7 +171,7 @@ def from_mat(path, cls=Graph):
     mat = spio.loadmat(path)
 
     if "Problem" not in mat:
-        raise ValueError(f"MAT file {path} does not contain 'Problem' key.")
+        raise ValueError(f"MAT file {path} does not contain Problem key.")
 
     adj = mat["Problem"][0][0][1]
 

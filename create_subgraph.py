@@ -18,7 +18,7 @@ def _get_depth_subgraph(vertices, max_depth):
         yield get_neighborhood(vertex, size=max_depth)
 
 
-def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 1):
+def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 2):
     for iterator, subgraph in enumerate(
         _get_moore_subgraph(graph.coarse_vertices, size)
     ):
@@ -27,7 +27,7 @@ def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 1):
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
 
 
-def moore_neighborhood_all(graph: OriginalGraph, size: int = 1):
+def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
     for iterator, subgraph in enumerate(_get_moore_subgraph(graph.vertex_list, size)):
         if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
             continue
