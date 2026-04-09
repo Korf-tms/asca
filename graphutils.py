@@ -9,8 +9,29 @@ def get_neighborhood(vertex: Vertex, size: int = 1) -> set[Vertex]:
         selected_vertices.update(*(v.get_adj() for v in selected_vertices))
     return selected_vertices
 
+def get_moore_neighborhood(vertex: Vertex, size: int = 1) -> set[Vertex]:
+    last_layer = set([vertex])
+    moore_neighborhood = set({vertex})
+    for _ in range(size):
+        new_layer = set()
 
-def get_neighborhood_connectivity(vertex: Vertex, size: int = 1) -> set[Vertex]:
+        new_layer.update(*(v.get_adj() for v in last_layer))
+
+        possible_corners = set()
+        possible_corners.update(*(v.get_adj() for v in new_layer))
+        possible_corners.difference_update(moore_neighborhood)
+
+        corners = set()
+        for v in possible_corners:
+            if len(new_layer.intersection(v.get_adj())) >= 2:
+                corners.add(v)
+
+        new_layer.update(corners)
+        moore_neighborhood.update(new_layer)        
+        last_layer = new_layer
+    return moore_neighborhood
+
+def get_neighborhood_connectivity(vertex: Vertex, size: int = 1, connectivity:int = 1) -> set[Vertex]:
     visited = set({vertex})
     depth = dict()
     depth[vertex] = 0
@@ -26,7 +47,7 @@ def get_neighborhood_connectivity(vertex: Vertex, size: int = 1) -> set[Vertex]:
                 neighbor_depth = current_depth + 1
             if (
                 neighbor_depth == size
-                and len(set(neighbor.get_adj()).intersection(visited)) <= 1
+                and len(set(neighbor.get_adj()).intersection(visited)) <= connectivity
             ):
                 continue
             if current_depth >= size or neighbor in visited:

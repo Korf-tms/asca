@@ -1,14 +1,14 @@
 from collections import defaultdict, deque
 
 from graph import Vertex, Edge, OriginalGraph
-from graphutils import get_neighborhood_connectivity, get_mis_set, get_neighborhood
+from graphutils import get_moore_neighborhood, get_mis_set, get_neighborhood
 
 
 def _get_moore_subgraph(vertices: set[Vertex] | list[Vertex], size: int):
     for vertex in vertices:
         degree = len(vertex.get_adj())
         if degree <= 4:
-            yield get_neighborhood_connectivity(vertex, size)
+            yield get_moore_neighborhood(vertex, size)
         else:
             yield get_neighborhood(vertex, size=size)
 
