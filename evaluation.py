@@ -1,11 +1,12 @@
-from scipy.sparse import csr_matrix, eye, diags
-from scipy.sparse.linalg import spsolve, eigsh, cgs, LinearOperator
-
+from scipy.sparse import eye
+from scipy.sparse.linalg import eigsh, cg, inv
 import pathlib as pl
 import numpy as np
 import h5py
 import utils
+
 from asca import DATA_FOLDER
+from schur_complement import schur_complement
 
 
 class Evaluator:
@@ -18,6 +19,12 @@ class Evaluator:
             name="evaluation",
             suffix="hdf5",
         )
+
+        self.schur_dict = dict()
+        self.approximation_dict = dict()
+
+        utils.create_folder(DATA_FOLDER)
+
         if not self.input_file.exists():
             raise ValueError("File doesnt exist.")
 
@@ -27,90 +34,77 @@ class Evaluator:
             for key in file.keys():
                 if key.startswith("iteration"):
                     iterations.append(int(key.replace("iteration", "")))
-            iterations = sorted(i for i in iterations if i != 0)
+            iterations = sorted(i for i in iterations if i != max(iterations))
             return iterations
 
-    def _read_matrix(self, key: str) -> csr_matrix:
+    def _read_iteration(self, iteration: int):
         with h5py.File(self.input_file, mode="r") as file:
-            if key not in file:
-                raise ValueError("Key not found.")
+            iteration_group = file[f"iteration{iteration}"]
+            mat = utils.read_csr_matrix(iteration_group["adj_matrix"])
 
-            matrix = file[key]
-            data = matrix["data"][:]
-            indices = matrix["indices"][:]
-            indptr = matrix["indptr"][:]
-            shape = tuple(matrix["shape"][:])
+            coarse = 0
+            if "coarse_count" in iteration_group.keys():
+                coarse = int(iteration_group["coarse_count"][()])
+        return mat, coarse
 
-            return csr_matrix((data, indices, indptr), shape=shape, dtype=np.float64)
+    def _get_matrices(self, iteration: int):
+        approximation, schur, vertices, vertices_coarse = 0, 0, 0, 0
 
-    def _read_iteration(self, iteration: int) -> csr_matrix:
-        return self._read_matrix(f"iteration{iteration}")
+        if iteration in self.schur_dict:
+            schur = self.schur_dict[iteration]
+        else:
+            adj_mat, vertices_coarse = self._read_iteration(iteration)
+            schur = schur_complement(adj_mat, vertices_coarse)
 
-    def _get_schur_complement(self) -> csr_matrix:
-        adj_mat = self._read_matrix("adj_matrix")
-        coarse_count = 0
+        if iteration in self.approximation_dict:
+            approximation = self.approximation_dict
+        else:
+            approximation, _ = self._read_iteration(iteration + 1)
 
-        with h5py.File(self.input_file, mode="r") as file:
-            coarse_count = int(file["adj_matrix/coarse_count"][()])
+        vertices = adj_mat.shape[0]
+        vertices_coarse = schur.shape[0]
 
-        degrees = np.asarray(adj_mat.sum(axis=1)).ravel()
-        graph_laplacian = diags(degrees, format="csr") - adj_mat
+        approximation += eye(approximation.shape[0], format="csr") * 1e-5
+        schur += eye(schur.shape[0], format="csr") * 1e-5
 
-        l_11 = graph_laplacian[:coarse_count, :coarse_count]
-        l_22 = graph_laplacian[coarse_count:, coarse_count:].tocsc()
-        l_21 = graph_laplacian[coarse_count:, :coarse_count].tocsc()
-        l_12 = graph_laplacian[:coarse_count, coarse_count:]
+        return schur, approximation, vertices, vertices_coarse
 
-        return csr_matrix(l_11 - l_12 @ spsolve(l_22, l_21))
-
-    def _write_iteration_data(self, iteration: int, data: dict):
-        with h5py.File(self.output_file, mode="a") as file:
-            group = file.require_group(f"iteration{iteration}")
-
-            for key, value in data.items():
-                if key in group:
-                    del group[key]
-
-                if np.isscalar(value):
-                    group.create_dataset(key, data=value)
-                else:
-                    group.create_dataset(key, data=np.asarray(value))
-
-    def cgs_evaluation(self, iteration: list[int] = None):
+    def cg_evaluation(self, iteration: list[int] = None):
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            last_matrix = (
-                self._read_iteration(current_iteration - 1)
-                if current_iteration != 1
-                else self._get_schur_complement()
-            )
-            current_matrix = self._read_iteration(current_iteration)
-
-            last_matrix = last_matrix + eye(last_matrix.shape[0], format="csr") * 1e-5
-            current_matrix = (
-                current_matrix + eye(current_matrix.shape[0], format="csr") * 1e-5
+            approximation_matrix, schur_matrix, vertex_count, coarse_count = (
+                self._get_matrices(current_iteration)
             )
 
-            current_matrix_inv = LinearOperator(
-                shape=current_matrix.shape,
-                matvec=lambda x: spsolve(current_matrix, x),
-                dtype=np.float64,
+            rhs = np.random.rand(approximation_matrix.shape[0])
+            rhs = rhs - np.ones(approximation_matrix.shape[0])
+
+            schur_matrix_inv = inv(schur_matrix)
+
+            exact_solution = schur_matrix_inv @ rhs
+
+            iteration_count = 0
+            error_history = []
+
+            def cg_callback(current_solution):
+                nonlocal iteration_count, error_history
+                iteration_count += 1
+                error_history.append(np.linalg.norm(exact_solution - current_solution))
+
+            _, info = cg(
+                A=approximation_matrix, M=schur_matrix_inv, b=rhs, callback=cg_callback
             )
 
-            b = np.random.rand(current_matrix.shape[0])
-            x, info = cgs(
-                A=last_matrix,
-                M=current_matrix_inv,
-                b=b,
-            )
-
-            self._write_iteration_data(
-                current_iteration,
+            utils.write_data(
+                self.output_file,
+                f"iteration{current_iteration}/",
                 {
-                    "vertices": last_matrix.shape[0],
-                    "coarse_vertices": current_matrix.shape[0],
-                    "cgs_iterations": info,
+                    "vertex_count": vertex_count,
+                    "coarse_count": coarse_count,
+                    "iteration_count": iteration_count,
+                    "info": info,
+                    "error_history": error_history,
                 },
             )
 
@@ -118,26 +112,15 @@ class Evaluator:
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            last_matrix = (
-                self._read_iteration(current_iteration - 1)
-                if current_iteration != 1
-                else self._get_schur_complement()
-            )
-            current_matrix = self._read_iteration(current_iteration)
+            approximation_matrix, schur_matrix, _, _ = self._get_matrices(current_iteration)
 
-            last_matrix = last_matrix + eye(last_matrix.shape[0], format="csr") * 1e-5
-            current_matrix = (
-                current_matrix + eye(current_matrix.shape[0], format="csr") * 1e-5
-            )
+            eigenvalues, eigenvectors = eigsh(A=schur_matrix, M=approximation_matrix)
 
-            eigenvalues, eigenvectors = eigsh(A=last_matrix, M=current_matrix)
-
-            self._write_iteration_data(
-                current_iteration,
+            utils.write_data(
+                self.output_file,
+                f"iteration{current_iteration}/",
                 {
                     "eigenvalues": eigenvalues,
                     "eigenvectors": eigenvectors,
-                    "vertices": last_matrix.shape[0],
-                    "coarse_vertices": current_matrix.shape[0],
                 },
             )
