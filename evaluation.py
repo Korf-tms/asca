@@ -112,7 +112,9 @@ class Evaluator:
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            approximation_matrix, schur_matrix, _, _ = self._get_matrices(current_iteration)
+            approximation_matrix, schur_matrix, _, _ = self._get_matrices(
+                current_iteration
+            )
 
             eigenvalues, eigenvectors = eigsh(A=schur_matrix, M=approximation_matrix)
 

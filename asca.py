@@ -62,8 +62,10 @@ class Asca:
         self.iterations = iterations
 
     def run_approximation(self):
-        current_graph : OriginalGraph = graph_io.from_file(path=self.path, cls=OriginalGraph)
-        
+        current_graph: OriginalGraph = graph_io.from_file(
+            path=self.path, cls=OriginalGraph
+        )
+
         current_iteration = 0
         Q = 0
 
@@ -72,17 +74,20 @@ class Asca:
             logging.info(
                 f"ASCA Iteration {current_iteration} current size: {len(current_graph.vertex_list)}"
             )
-            #calculate ASCA
+            # calculate ASCA
             Q: csr_matrix = self.calculate_approximation(current_graph)
-            
+
             with h5py.File(self.output_file, mode="a") as file:
                 iteration_group = file.require_group(f"iteration{current_iteration}")
                 adj_mat_group = iteration_group.require_group("adj_matrix")
-                utils.store_csr_matrix(adj_mat_group, current_graph.to_adj_matrix(sorting=current_graph.vertex_sort))
+                utils.store_csr_matrix(
+                    adj_mat_group,
+                    current_graph.to_adj_matrix(sorting=current_graph.vertex_sort),
+                )
                 iteration_group.create_dataset(
-                        "coarse_count", data=current_graph.coarse_vertices_count
-                    )
-                
+                    "coarse_count", data=current_graph.coarse_vertices_count
+                )
+
             # getting the adj matrix out of the Laplacian
             Q = -Q
             Q.setdiag(0)
@@ -90,8 +95,8 @@ class Asca:
             current_graph = graph_io.from_coo(coo_mat=Q.tocoo(), cls=OriginalGraph)
 
             current_iteration += 1
-        
-        #store last iteration, which has no coarse vertices
+
+        # store last iteration, which has no coarse vertices
         with h5py.File(self.output_file, mode="a") as file:
             iteration_group = file.require_group(f"iteration{current_iteration}")
             adj_mat_group = iteration_group.require_group("adj_matrix")

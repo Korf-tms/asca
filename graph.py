@@ -5,7 +5,6 @@ from numpy import float64
 
 
 class Edge:
-
     """
     Class representing an unordered edge connecting tow vertices.
 
@@ -14,6 +13,7 @@ class Edge:
     vertices : set[Vertex]
 
     """
+
     def __init__(self, first: Vertex, second: Vertex, weight: int):
         if first == second:
             raise ValueError("Self loops are not supported.")
@@ -28,10 +28,7 @@ class Edge:
         return hash(self._unique)
 
     def __eq__(self, other):
-        return (
-            isinstance(other, Edge)
-            and self._unique == other._unique
-        )
+        return isinstance(other, Edge) and self._unique == other._unique
 
     def get_other(self, vertex: Vertex) -> Vertex:
         if vertex == self.first:
@@ -39,7 +36,6 @@ class Edge:
         if vertex == self.second:
             return self.first
         raise ValueError("Vertex not in edge.")
-        
 
 
 class Vertex:

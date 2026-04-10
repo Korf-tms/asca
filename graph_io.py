@@ -11,7 +11,7 @@ def from_file(path: str | pl.Path, cls=Graph):
     actual_path = pl.Path(path)
     if not actual_path.exists():
         raise ValueError("File does not exist.")
-    
+
     if actual_path.suffix == ".csv":
         return from_csv(path, cls)
     if actual_path.suffix == ".hdf5":
@@ -20,6 +20,7 @@ def from_file(path: str | pl.Path, cls=Graph):
         return from_mat(path, cls)
     if actual_path.suffix == ".mtx":
         return from_mtx(path, cls)
+
 
 def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=Graph):
     """

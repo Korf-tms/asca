@@ -9,6 +9,7 @@ def get_neighborhood(vertex: Vertex, size: int = 1) -> set[Vertex]:
         selected_vertices.update(*(v.get_adj() for v in selected_vertices))
     return selected_vertices
 
+
 def get_moore_neighborhood(vertex: Vertex, size: int = 1) -> set[Vertex]:
     last_layer = set([vertex])
     moore_neighborhood = set({vertex})
@@ -27,11 +28,14 @@ def get_moore_neighborhood(vertex: Vertex, size: int = 1) -> set[Vertex]:
                 corners.add(v)
 
         new_layer.update(corners)
-        moore_neighborhood.update(new_layer)        
+        moore_neighborhood.update(new_layer)
         last_layer = new_layer
     return moore_neighborhood
 
-def get_neighborhood_connectivity(vertex: Vertex, size: int = 1, connectivity:int = 1) -> set[Vertex]:
+
+def get_neighborhood_connectivity(
+    vertex: Vertex, size: int = 1, connectivity: int = 1
+) -> set[Vertex]:
     visited = set({vertex})
     depth = dict()
     depth[vertex] = 0
