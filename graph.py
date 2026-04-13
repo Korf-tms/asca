@@ -6,12 +6,28 @@ from numpy import float64
 
 class Edge:
     """
-    Class representing an unordered edge connecting tow vertices.
+    Representation of an undirected edge between two distinct vertices.
+    This means the graph constructed from these edges is undirected and with no self loops.
+
+    Parameters
+    ----------
+    first : Vertex
+        One endpoint of the edge.
+    second : Vertex
+        The other endpoint of the edge.
+    weight : int
+        Weight (or value) associated with the edge.
 
     Attributes
     ----------
-    vertices : set[Vertex]
-
+    first : Vertex
+        First endpoint.
+    second : Vertex
+        Second endpoint.
+    weight : int
+        Edge weight.
+    multiplicity : int
+        Counter used to track how many subgraphs this edge is in.
     """
 
     def __init__(self, first: Vertex, second: Vertex, weight: int):
@@ -31,6 +47,19 @@ class Edge:
         return isinstance(other, Edge) and self._unique == other._unique
 
     def get_other(self, vertex: Vertex) -> Vertex:
+        """
+        Return the opposite endpoint of the edge.
+
+        Parameters
+        ----------
+        vertex : Vertex
+            One endpoint of the edge.
+
+        Returns
+        -------
+        Vertex
+            The other endpoint of the edge.
+        """
         if vertex == self.first:
             return self.second
         if vertex == self.second:
@@ -39,14 +68,53 @@ class Edge:
 
 
 class Vertex:
+    """
+    Representation of a graph vertex.
+
+    Parameters
+    ----------
+    id : int
+        Unique identifier of the vertex.
+
+    Attributes
+    ----------
+    id : int
+        Vertex identifier.
+    adj : set[Edge]
+        Set of edges incident to this vertex.
+    """
+
     def __init__(self, id: int):
         self.id: int = id
         self.adj: set[Edge] = set()
 
     def get_adj(self) -> set[Vertex]:
+        """
+        Get adjacent vertices.
+
+        Returns
+        -------
+        set[Vertex]
+            Set of vertices connected to this vertex by an edge.
+        """
         return {edge.get_other(self) for edge in self.adj}
 
     def get_in_subgraph(self, subgraph: set[Vertex]) -> set[Edge]:
+        """
+        Get edges of this vertex that are in a subgraph.
+
+        Parameters
+        ----------
+        subgraph : set[Vertex]
+            Set of vertices defining the subgraph.
+
+        Returns
+        -------
+        set[Edge]
+            Set of edges in a subgraph
+        """
+        if self not in subgraph:
+            raise ValueError("Vertex not in subgraph.")
         return {edge for edge in self.adj if edge.get_other(self) in subgraph}
 
     def __str__(self):
@@ -63,6 +131,24 @@ class Vertex:
 
 
 class Graph:
+    """
+    Base class representing an undirected graph.
+
+    Parameters
+    ----------
+    vertex_list : set[Vertex] or list[Vertex]
+        Collection of vertices in the graph.
+    name : str, default="Graph"
+        Name of the graph.
+
+    Attributes
+    ----------
+    vertex_list : set[Vertex]
+        Set of vertices in the graph.
+    name : str
+        Graph name.
+    """
+
     def __init__(self, vertex_list: set[Vertex] | list[Vertex], name: str = "Graph"):
         self.vertex_list: set[Vertex] = set(vertex_list)
         self.name = name
@@ -71,6 +157,21 @@ class Graph:
         return self.name
 
     def to_adj_matrix(self, divide_edges=False, sorting=None) -> csr_matrix:
+        """
+        Convert the graph to a CSR adjacency matrix.
+
+        Parameters
+        ----------
+        divide_edges : bool, default=False
+            If True, divide edge weights by their multiplicity.
+        sorting : callable, optional
+            Function used to sort vertices before matrix construction.
+
+        Returns
+        -------
+        scipy.sparse.csr_matrix
+            Sparse adjacency matrix of shape (n_vertices, n_vertices).
+        """
         vertex_list = []
         if sorting is None:
             vertex_list = self.vertex_list
@@ -100,6 +201,23 @@ class Graph:
 
 
 class OriginalGraph(Graph):
+    """
+    Extension of Graph that supports coarse vertices and subgraphs.
+
+    Parameters
+    ----------
+    vertex_list : set[Vertex] or list[Vertex]
+        Collection of vertices.
+    name : str, default="OriginalGraph"
+        Name of the graph.
+
+    Attributes
+    ----------
+    coarse_vertices : set[Vertex]
+        Set of coarse vertices.
+    subgraph_list : list[SubGraph]
+        List of subgraphs derived from this graph.
+    """
 
     def __init__(self, vertex_list: set[Vertex] | list[Vertex], name="OriginalGraph"):
         super().__init__(vertex_list, name)
@@ -107,6 +225,14 @@ class OriginalGraph(Graph):
         self.subgraph_list: set[SubGraph] = []
 
     def set_coarse(self, coarse_vertices: set[Vertex]):
+        """
+        Defince coarse vertices and create position of vertex on the final approximation matrix.
+
+        Parameters
+        ----------
+        coarse_vertices : set[Vertex]
+            Vertices to mark as coarse.
+        """
         self.coarse_vertices = coarse_vertices
         self.coarse_vertices_count = len(coarse_vertices)
         self.sorted_vertex_adj_matrix_mapping = {
@@ -116,21 +242,71 @@ class OriginalGraph(Graph):
             )
         }
 
-    def add_subgraph(self, subgraph_vertices, name: str = None) -> None:
+    def add_subgraph(
+        self, subgraph_vertices: list[Vertex] | set[Vertex], name: str = None
+    ) -> None:
+        """
+        Add a subgraph and update edge multiplicities.
+
+        Parameters
+        ----------
+        subgraph_vertices : list[Vertex] or set[Vertex]
+            Vertices forming the subgraph.
+        name : str, optional
+            Name of the subgraph.
+        """
         subgraph = SubGraph(vertex_list=subgraph_vertices, graph=self, name=name)
         self.subgraph_list.append(subgraph)
 
         edges = set()
+        # find all the edges
         for v in subgraph_vertices:
             edges.update(v.get_in_subgraph(subgraph_vertices))
+        # change edge multiplicity
         for edge in edges:
             edge.multiplicity += 1
 
     def vertex_sort(self, vertex):
+        """
+        Sorting key for vertices.
+
+        Coarse vertices are placed first, then sorted by vertex id.
+
+        Parameters
+        ----------
+        vertex : Vertex
+
+        Returns
+        -------
+        tuple
+            Sorting key.
+        """
         return (vertex not in self.coarse_vertices, vertex.id)
 
 
 class SubGraph(Graph):
+    """
+    Representation of a subgraph derived from an OriginalGraph.
+
+    Parameters
+    ----------
+    vertex_list : list[Vertex] or set[Vertex]
+        Vertices in the subgraph.
+    graph : OriginalGraph
+        Parent graph.
+    name : str, default="Subgraph"
+        Name of the subgraph.
+
+    Attributes
+    ----------
+    parent : OriginalGraph
+        Reference to the original graph.
+    coarse_vertices_count : int
+        Number of coarse vertices in this subgraph.
+    sorted_vertex_list : list[Vertex]
+        Vertices sorted according to parent graph sort.
+    """
+
     def __init__(
         self,
         vertex_list: list[Vertex] | set[Vertex],

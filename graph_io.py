@@ -8,6 +8,28 @@ from graph import Edge, Graph, Vertex
 
 
 def from_file(path: str | pl.Path, cls=Graph):
+    """
+    Load a graph from a supported file format.
+
+    Supported formats
+    -----------------
+    - .csv: COO triplet data with columns row, col, and val
+    - .hdf5: HDF5 file containing either coo_matrix or adj_matrix
+    - .mat: MATLAB file containing a sparse adjacency matrix under mat["Problem"]
+    - .mtx: Matrix Market file containing a dense or sparse matrix
+
+    Parameters
+    ----------
+    path : str or pathlib.Path
+        Path to the input file.
+    cls : type, default=Graph
+        Graph class to instantiate, must be child of Graph class.
+
+    Returns
+    -------
+    Graph
+        An instance of cls loaded from the file contents.
+    """
     actual_path = pl.Path(path)
     if not actual_path.exists():
         raise ValueError("File does not exist.")
@@ -20,14 +42,15 @@ def from_file(path: str | pl.Path, cls=Graph):
         return from_mat(path, cls)
     if actual_path.suffix == ".mtx":
         return from_mtx(path, cls)
+    raise ValueError("Unsupported filetype.")
 
 
 def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=Graph):
     """
-    Create a graph from COO (coordinate) sparse matrix data.
+    Create a graph from COO sparse matrix data.
 
-    The COO format stores non-zero entries of a sparse matrix as three arrays
-    such that:
+    The COO (coordinate) format stores non-zero entries of a sparse matrix
+    using three arrays so that:
 
         A[rows[i], cols[i]] = values[i]
 
@@ -39,14 +62,13 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
     Parameters
     ----------
     rows : array-like of int, optional
-        Row indices of non-zero entries.
+        Row indices of matrix entries.
     cols : array-like of int, optional
-        Column indices of non-zero entries.
+        Column indices of matrix entries.
     values : array-like, optional
-        Values corresponding to each (row, col) pair.
+        Values of matrix entries.
     coo_mat : scipy.sparse.coo_matrix, optional
-        A SciPy COO sparse matrix whose row indices, column indices, and data
-        are used to construct the graph.
+        SciPy COO sparse matrix
     cls : type, default=Graph
         Graph class to instantiate.
 
@@ -96,20 +118,23 @@ def from_csv(path, cls=Graph):
     """
     Load a graph from a CSV file containing COO-format data.
 
-    The CSV file must contain columns:
-        - row
-        - col
-        - val
+    The CSV file must contain the following columns:
+
+    - row: row indices
+    - col: column indices
+    - val: entry values
 
     Parameters
     ----------
-    path : str
+    path : str or pathlib.Path
         Path to the CSV file.
+    cls : type, default=Graph
+        Graph class to instantiate.
 
     Returns
     -------
     Graph
-        Graph constructed from the CSV data.
+        An instance of cls constructed from the CSV data.
     """
     dataframe = pd.read_csv(path)
 
@@ -120,19 +145,22 @@ def from_hdf5(path, cls=Graph):
     """
     Load a graph from an HDF5 file.
 
-    Supported formats inside the file:
-        - coo_matrix group with datasets row, col, val
-        - adj_matrix dataset (dense or sparse)
+    Supported hdf5 groups are:
+
+    - coo_matrix groups containing coo sparse matrix stored in row, col, and val datasets
+    - adj_matrix dataset containing the dense adjacency matrix
 
     Parameters
     ----------
-    path : str
+    path : str or pathlib.Path
         Path to the HDF5 file.
+    cls : type, default=Graph
+        Graph class to instantiate.
 
     Returns
     -------
     Graph
-        Graph constructed from the HDF5 data.
+        An instance of cls constructed from the HDF5 data.
     """
     with h5py.File(path, "r") as file:
         if "coo_matrix" in file:
@@ -153,21 +181,19 @@ def from_hdf5(path, cls=Graph):
 
 def from_mat(path, cls=Graph):
     """
-    Load a graph from a MATLAB (.mat) file.
-
-    Expected structure:
-        mat["Problem"][0][0][1] or mat["Problem"][0][0][2]
-    should contain a sparse adjacency matrix.
+    Load a graph from a MATLAB .mat file.
 
     Parameters
     ----------
-    path : str
-        Path to the .mat file.
+    path : str or pathlib.Path
+        Path to the MATLAB file.
+    cls : type, default=Graph
+        Graph class to instantiate.
 
     Returns
     -------
     Graph
-        Graph constructed from the MATLAB data.
+        An instance of cls constructed from the MATLAB data.
     """
     mat = spio.loadmat(path)
 
@@ -186,19 +212,19 @@ def from_mat(path, cls=Graph):
 
 def from_mtx(path, cls=Graph):
     """
-    Load a graph from a Matrix Market (.mtx) file.
-
-    Supports both sparse and dense matrices.
+    Load a graph from a Matrix Market .mtx file.
 
     Parameters
     ----------
-    path : str
-        Path to the .mtx file.
+    path : str or pathlib.Path
+        Path to the Matrix Market file.
+    cls : type, default=Graph
+        Graph class to instantiate.
 
     Returns
     -------
     Graph
-        Graph constructed from the matrix data.
+        An instance of cls constructed from the matrix data.
     """
     adj_mat = spio.mmread(path)
 
