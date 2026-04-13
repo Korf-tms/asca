@@ -77,20 +77,22 @@ class Evaluator:
                 self._get_matrices(current_iteration)
             )
 
-            rhs = np.random.rand(approximation_matrix.shape[0])
-            rhs = rhs - np.ones(approximation_matrix.shape[0])
+            ones = np.ones(approximation_matrix.shape[0])
 
-            schur_matrix_inv = inv(schur_matrix)
+            x_exact = np.random.rand(approximation_matrix.shape[0])
+            x_exact = x_exact - np.dot(ones, x_exact) * ones / np.linalg.norm(ones)
 
-            exact_solution = schur_matrix_inv @ rhs
+            rhs = schur_matrix @ x_exact
+
+            schur_matrix_inv = inv(schur_matrix.tocsc())
 
             iteration_count = 0
             error_history = []
 
-            def cg_callback(current_solution):
+            def cg_callback(x_current):
                 nonlocal iteration_count, error_history
                 iteration_count += 1
-                error_history.append(np.linalg.norm(exact_solution - current_solution))
+                error_history.append(np.linalg.norm(x_exact - x_current))
 
             _, info = cg(
                 A=approximation_matrix, M=schur_matrix_inv, b=rhs, callback=cg_callback
