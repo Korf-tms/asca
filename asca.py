@@ -1,9 +1,7 @@
 import time
-import logging
 
 from scipy.sparse import csr_matrix
 from joblib import Parallel, delayed
-from datetime import datetime
 import pathlib as pl
 import numpy as np
 import h5py
@@ -17,7 +15,6 @@ import utils
 
 LOG_FOLDER = "logs"
 DATA_FOLDER = "data"
-
 
 class Asca:
     def __init__(
@@ -33,12 +30,6 @@ class Asca:
     ):
 
         utils.create_folder(DATA_FOLDER)
-        utils.create_folder(LOG_FOLDER)
-
-        now = datetime.now().strftime("%S-%M-%H_%d_%m_%y_log")
-        logging.basicConfig(
-            filename=f"{LOG_FOLDER}/{now}.log", filemode="w", level=logging.INFO
-        )
 
         self.path = filename
         self.filename = pl.Path(filename).stem
@@ -71,9 +62,6 @@ class Asca:
 
         for _ in range(self.iterations):
 
-            logging.info(
-                f"ASCA Iteration {current_iteration} current size: {len(current_graph.vertex_list)}"
-            )
             # calculate ASCA
             Q: csr_matrix = self.calculate_approximation(current_graph)
 
@@ -107,14 +95,10 @@ class Asca:
         # select coarse vertices
         start_time = time.time()
         self.coarse_selection_method(in_graph, **self.coarse_selection_method_arguments)
-        logging.info(
-            f"Coarse vertex selection took {time.time() - start_time} seconds."
-        )
 
         # create subgraphs
         start_time = time.time()
         self.create_subgraphs_method(in_graph, **self.create_subgraphs_method_arguments)
-        logging.info(f"Subgraph creation took {time.time() - start_time} seconds.")
 
         start_time = time.time()
         Q = csr_matrix(
@@ -132,5 +116,4 @@ class Asca:
 
         for contribution in generator:
             Q += contribution
-        logging.info(f"Calculation took {time.time() - start_time} seconds.")
         return Q

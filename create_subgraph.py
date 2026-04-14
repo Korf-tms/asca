@@ -38,7 +38,7 @@ def _get_depth_subgraph(vertices, size):
     Yields
     ------
     set[Vertex]
-        A subgraph for each vertex consisting of all vertices within
+        A subgraph for each input vertex consisting of all vertices within
         max_depth distance.
     """
     for vertex in vertices:
@@ -56,10 +56,22 @@ def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 2):
     size : int, default=2
         Neighborhood size used for subgraph construction, inclusive.
     """
+    if size < 1:
+        raise ValueError("size must be at least 1")
+
+    added_any = False
     for iterator, subgraph in enumerate(
         _get_moore_subgraph(graph.coarse_vertices, size)
     ):
+        if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+            continue
+        added_any = True
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
+
+    if not added_any:
+        raise ValueError(
+            "No subgraphs were created because every Moore neighborhood had fewer than 3 coarse vertices"
+        )
 
 
 def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
@@ -73,8 +85,20 @@ def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
     size : int, default=2
         Neighborhood size used for subgraph construction, inclusive.
     """
+    if size < 1:
+        raise ValueError("size must be at least 1")
+
+    added_any = False
     for iterator, subgraph in enumerate(_get_moore_subgraph(graph.vertex_list, size)):
+        if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+            continue
+        added_any = True
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
+
+    if not added_any:
+        raise ValueError(
+            "No subgraphs were created because every Moore neighborhood had fewer than 3 coarse vertices"
+        )
 
 
 def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
@@ -88,10 +112,18 @@ def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
     size : int, default=2
         Neighborhood size used for subgraph construction, inclusive.
     """
+    if size < 1:
+        raise ValueError("size must be at least 1")
+
+    added_any = False
     for iterator, subgraph in enumerate(
         _get_depth_subgraph(graph.coarse_vertices, size)
     ):
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
+        added_any = True
+
+    if not added_any:
+        raise ValueError("No subgraphs were created because the graph has no coarse vertices")
 
 
 def create_subgraphs_macrostructures(
@@ -119,6 +151,14 @@ def create_subgraphs_macrostructures(
     merge_distance : int, default=1
         Distance for merging neighborhoods into final subgraphs (macrostructure).
     """
+    for name, size in [
+        ("micro_size", micro_size),
+        ("connection_depth", connection_depth),
+        ("merge_distance", merge_distance),
+    ]:
+        if size < 1:
+            raise ValueError(f"{name} must be at least 1")
+
     # Map original coarse vertices to structure vertices
     coarse_to_structure = {v: Vertex(v.id) for v in graph.coarse_vertices}
 
@@ -162,6 +202,8 @@ def create_subgraphs_macrostructures(
     # Select coarse vertices of the subgraph structure
     selected_centers = get_mis_set(coarse_to_structure.values(), 1)
 
+    added_any = False
+
     # Build final subgraphs by merging microstructures in each macrostructure
     for i, center in enumerate(selected_centers):
         merged_subgraph = set(local_subgraphs[center])
@@ -170,3 +212,9 @@ def create_subgraphs_macrostructures(
             merged_subgraph.update(local_subgraphs[neighbor])
 
         graph.add_subgraph(merged_subgraph, f"SubGraph{i}")
+        added_any = True
+
+    if not added_any:
+        raise ValueError(
+            "No subgraphs were created because no macrostructure centers were selected"
+        )
