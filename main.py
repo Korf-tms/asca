@@ -21,11 +21,11 @@ tests = [
 ]
 
 for coarse_method, cm_args, subgraph_method, sm_args in tests:
-    filename = f"data/{filename}_{coarse_method}{cm_args["size"]}_{subgraph_method}{sm_args["size"]}.hdf5"
+    output_file = f"data/{filename}_{coarse_method}{cm_args["size"]}_{subgraph_method}{sm_args["size"]}.hdf5"
     
     a = asca.Asca(
         filename=f"matrices/{filename}.mtx.gz",
-        output_file=filename,
+        output_file=output_file,
         iterations=1,
         coarse_selection_method=coarse_method,
         coarse_selection_method_arguments=cm_args,
@@ -34,7 +34,7 @@ for coarse_method, cm_args, subgraph_method, sm_args in tests:
     )
     a.run_approximation()
 
-    e = evaluation.Evaluator(filename)
+    e = evaluation.Evaluator(output_file)
     e.cg_evaluation()
     e.eigsh_evaluation()
 

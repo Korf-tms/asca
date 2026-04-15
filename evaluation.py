@@ -1,7 +1,8 @@
-from scipy.sparse import eye
+from scipy.sparse import eye, diags
 from scipy.sparse.linalg import eigsh, cg, inv
 import pathlib as pl
 import numpy as np
+from numpy import asarray
 import h5py
 import utils
 
@@ -64,6 +65,9 @@ class Evaluator:
 
         vertices = adj_mat.shape[0]
         vertices_coarse = schur.shape[0]
+
+        degrees = asarray(approximation.sum(axis=1)).ravel()
+        approximation = diags(degrees, format="csr") - approximation
 
         approximation = approximation + eye(approximation.shape[0], format="csr") * 1e-5
         schur = schur + eye(schur.shape[0], format="csr") * 1e-5
