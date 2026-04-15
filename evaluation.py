@@ -48,24 +48,25 @@ class Evaluator:
         return mat, coarse
 
     def _get_matrices(self, iteration: int):
-        approximation, schur, vertices, vertices_coarse = 0, 0, 0, 0
-
         if iteration in self.schur_dict:
             schur = self.schur_dict[iteration]
+            adj_mat, _ = self._read_iteration(iteration)
         else:
             adj_mat, vertices_coarse = self._read_iteration(iteration)
             schur = schur_complement(adj_mat, vertices_coarse)
+            self.schur_dict[iteration] = schur
 
         if iteration in self.approximation_dict:
-            approximation = self.approximation_dict
+            approximation = self.approximation_dict[iteration]
         else:
             approximation, _ = self._read_iteration(iteration + 1)
+            self.approximation_dict[iteration] = approximation
 
         vertices = adj_mat.shape[0]
         vertices_coarse = schur.shape[0]
 
-        approximation += eye(approximation.shape[0], format="csr") * 1e-5
-        schur += eye(schur.shape[0], format="csr") * 1e-5
+        approximation = approximation + eye(approximation.shape[0], format="csr") * 1e-5
+        schur = schur + eye(schur.shape[0], format="csr") * 1e-5
 
         return schur, approximation, vertices, vertices_coarse
 
@@ -73,10 +74,10 @@ class Evaluator:
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            approximation_matrix, schur_matrix, vertex_count, coarse_count = (
+            schur_matrix, approximation_matrix, vertex_count, coarse_count = (
                 self._get_matrices(current_iteration)
             )
-
+            
             ones = np.ones(approximation_matrix.shape[0])
 
             x_exact = np.random.rand(approximation_matrix.shape[0])
@@ -94,9 +95,11 @@ class Evaluator:
                 iteration_count += 1
                 error_history.append(np.linalg.norm(x_exact - x_current))
 
-            _, info = cg(
+            x, info = cg(
                 A=approximation_matrix, M=schur_matrix_inv, b=rhs, callback=cg_callback
             )
+
+            error_history.append(np.linalg.norm(x_exact - x))
 
             utils.write_data(
                 self.output_file,
@@ -114,11 +117,13 @@ class Evaluator:
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            approximation_matrix, schur_matrix, _, _ = self._get_matrices(
+            schur_matrix, approximation_matrix, _, _ = self._get_matrices(
                 current_iteration
             )
 
             eigenvalues, eigenvectors = eigsh(A=schur_matrix, M=approximation_matrix)
+
+            condition_number = eigenvalues.max() / eigenvalues.min()
 
             utils.write_data(
                 self.output_file,
@@ -126,5 +131,6 @@ class Evaluator:
                 {
                     "eigenvalues": eigenvalues,
                     "eigenvectors": eigenvectors,
+                    "condition_number": condition_number,
                 },
             )

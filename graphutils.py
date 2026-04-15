@@ -127,3 +127,38 @@ def get_mis_set(vertex_list: list[Vertex] | set[Vertex], size: int = 1) -> set[V
         mis_set.add(current)
         remaining_vertices.difference_update(get_neighborhood(current, size=size))
     return mis_set
+
+def get_mis_set_ordered(vertex_list: list[Vertex], size: int = 1) -> set[Vertex]:
+    """
+    Compute a maximal independent set (MIS) using a greedy strategy.
+
+    A maximal independent set is a set of vertices such that:
+    - No two vertices are within the specified distance.
+    - No additional vertex can be added without violating this condition.
+
+    Produces the same independent set on the same graph.
+    Order of the input matters.
+
+    Parameters
+    ----------
+    vertex_list : list[Vertex] or set[Vertex]
+        Collection of vertices to select from.
+    size : int, default=1
+        Minimal distance from other vertices in the mis set.
+        A value of 1 corresponds to the standard MIS definition.
+
+    Returns
+    -------
+    set[Vertex]
+        A maximal independent set.
+    """
+    mis_set = set()
+    remaining_vertices = vertex_list
+
+    while remaining_vertices:
+        current = remaining_vertices.pop(0)
+        mis_set.add(current)
+        neighborhood = set(get_neighborhood(current, size=size))
+        remaining_vertices = [v for v in remaining_vertices if v not in neighborhood]
+
+    return mis_set

@@ -40,7 +40,7 @@ def from_file(path: str | pl.Path, cls=Graph):
         return from_hdf5(path, cls)
     if actual_path.suffix == ".mat":
         return from_mat(path, cls)
-    if actual_path.suffix == ".mtx":
+    if actual_path.suffix == ".gz":
         return from_mtx(path, cls)
     raise ValueError("Unsupported filetype.")
 
@@ -104,10 +104,14 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
     vertex_dictionary = {i: Vertex(i) for i in range(n)}
 
     for row, col, val in zip(rows, cols, values):
-        if row >= col:
+        if row == col:
             continue
-        vertex_row = vertex_dictionary[int(row)]
-        vertex_col = vertex_dictionary[int(col)]
+
+        u = min(int(row), int(col))
+        v = max(int(row), int(col))
+
+        vertex_row = vertex_dictionary[u]
+        vertex_col = vertex_dictionary[v]
         edge = Edge(vertex_row, vertex_col, val)
         vertex_row.adj.add(edge)
         vertex_col.adj.add(edge)
