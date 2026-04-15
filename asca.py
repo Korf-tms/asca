@@ -40,10 +40,12 @@ class Asca:
             self.filename, output_file=output_file, data_folder=DATA_FOLDER, name="data"
         )
         coarse_selection_methods = {
-            "mis": select_coarse.select_coarse_mis,
-            "mis_min": select_coarse.select_coarse_mis_min,
-            "mis_max": select_coarse.select_coarse_mis_max,
-            "moore": select_coarse.select_coarse_moore,
+            "mis": select_coarse.mis,
+            "mis_degree_asc": select_coarse.mis_degree_asc,
+            "mis_degree_desc": select_coarse.mis_degree_desc,
+            "mis_strength_asc": select_coarse.mis_strength_asc,
+            "mis_strength_desc": select_coarse.mis_strength_desc,
+            "moore": select_coarse.moore,
         }
         create_subgraphs_methods = {
             "depth": create_subgraph.create_subgraphs_depth,
@@ -102,12 +104,12 @@ class Asca:
         # select coarse vertices
         start_time = time.time()
         self.coarse_selection_method(in_graph, **self.coarse_selection_method_arguments)
-        logger.info(f"Coarse selection took {start_time - time.time()}s")
+        logger.info(f"Coarse selection took {time.time() - start_time}s")
 
         # create subgraphs
         start_time = time.time()
         self.create_subgraphs_method(in_graph, **self.create_subgraphs_method_arguments)
-        logger.info(f"Graph creation took {start_time - time.time()}s")
+        logger.info(f"Graph creation took {time.time() - start_time}s")
 
         start_time = time.time()
         Q = csr_matrix(
@@ -125,5 +127,5 @@ class Asca:
 
         for contribution in generator:
             Q += contribution
-        logger.info(f"Approximation calculation took {start_time - time.time()}s")
+        logger.info(f"Approximation calculation took {time.time() - start_time}s")
         return Q

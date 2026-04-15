@@ -40,7 +40,7 @@ def from_file(path: str | pl.Path, cls=Graph):
         return from_hdf5(path, cls)
     if actual_path.suffix == ".mat":
         return from_mat(path, cls)
-    if actual_path.suffix == ".gz":
+    if actual_path.suffix == ".gz" or actual_path.suffix == ".mtx":
         return from_mtx(path, cls)
     raise ValueError("Unsupported filetype.")
 
@@ -115,7 +115,14 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
         edge = Edge(vertex_row, vertex_col, val)
         vertex_row.adj.add(edge)
         vertex_col.adj.add(edge)
-    return cls(set(vertex_dictionary.values()))
+    
+    no_isolated_vertices = set()
+    for vertex in vertex_dictionary.values():
+        if len(vertex.adj) == 0:
+            continue
+        no_isolated_vertices.add(vertex)
+
+    return cls(no_isolated_vertices)
 
 
 def from_csv(path, cls=Graph):
@@ -230,13 +237,5 @@ def from_mtx(path, cls=Graph):
     Graph
         An instance of cls constructed from the matrix data.
     """
-    adj_mat = spio.mmread(path)
-
-    if issparse(adj_mat):
-        coo_adj_mat = (
-            adj_mat.tocoo() if not isinstance(adj_mat, coo_matrix) else adj_mat
-        )
-    else:
-        coo_adj_mat = coo_matrix(adj_mat)
-
-    return from_coo(coo_mat=coo_adj_mat, cls=cls)
+    adj_mat : coo_matrix = spio.mmread(path, spmatrix=True)
+    return from_coo(coo_mat=adj_mat, cls=cls)

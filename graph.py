@@ -319,6 +319,6 @@ class SubGraph(Graph):
         self.coarse_vertices_count = len(
             [vertex for vertex in vertex_list if vertex in self.parent.coarse_vertices]
         )
-        self.sorted_vertex_list = sorted(
+        self.sorted_vertex_list = list(sorted(
             self.vertex_list, key=self.parent.vertex_sort, reverse=False
-        )
+        ))
