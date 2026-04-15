@@ -1,4 +1,5 @@
 import time
+import logging
 
 from scipy.sparse import csr_matrix
 from joblib import Parallel, delayed
@@ -15,6 +16,8 @@ import utils
 
 LOG_FOLDER = "logs"
 DATA_FOLDER = "data"
+
+logger = logging.getLogger(__name__)
 
 class Asca:
     def __init__(
@@ -38,6 +41,8 @@ class Asca:
         )
         coarse_selection_methods = {
             "mis": select_coarse.select_coarse_mis,
+            "mis_min": select_coarse.select_coarse_mis_min,
+            "mis_max": select_coarse.select_coarse_mis_max,
             "moore": select_coarse.select_coarse_moore,
         }
         create_subgraphs_methods = {
@@ -91,14 +96,18 @@ class Asca:
             utils.store_csr_matrix(adj_mat_group, Q)
 
     def calculate_approximation(self, in_graph: OriginalGraph):
+        degrees = [(x, len(x.adj)) for x in in_graph.vertex_list]
+        logger.info(f"--Starting approximation, size {len(in_graph.vertex_list)}, min degree {min(degrees, key=lambda x: x[1])}, max degree {max(degrees, key=lambda x: x[1])}")
 
         # select coarse vertices
         start_time = time.time()
         self.coarse_selection_method(in_graph, **self.coarse_selection_method_arguments)
+        logger.info(f"Coarse selection took {start_time - time.time()}s")
 
         # create subgraphs
         start_time = time.time()
         self.create_subgraphs_method(in_graph, **self.create_subgraphs_method_arguments)
+        logger.info(f"Graph creation took {start_time - time.time()}s")
 
         start_time = time.time()
         Q = csr_matrix(
@@ -116,4 +125,5 @@ class Asca:
 
         for contribution in generator:
             Q += contribution
+        logger.info(f"Approximation calculation took {start_time - time.time()}s")
         return Q

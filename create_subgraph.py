@@ -1,7 +1,10 @@
 from collections import defaultdict, deque
+import logging
 
 from graph import Vertex, Edge, OriginalGraph
 from graphutils import get_moore_neighborhood, get_mis_set, get_neighborhood
+
+logger = logging.getLogger(__name__)
 
 
 def _get_moore_subgraph(vertices: set[Vertex] | list[Vertex], size: int):
@@ -56,22 +59,33 @@ def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 2):
     size : int, default=2
         Neighborhood size used for subgraph construction, inclusive.
     """
+
+    logging.info("Using moore around coarse method")
+
     if size < 1:
         raise ValueError("size must be at least 1")
 
-    added_any = False
+    skipped = 0
+    not_skipped = 0
     for iterator, subgraph in enumerate(
         _get_moore_subgraph(graph.coarse_vertices, size)
     ):
         if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+            skipped += 1
             continue
-        added_any = True
+        not_skipped += 1
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
 
-    if not added_any:
+    if skipped != 0:
+        logging.warning(
+            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+        )
+
+    if not_skipped == 0:
         raise ValueError(
             "No subgraphs were created because every Moore neighborhood had fewer than 3 coarse vertices"
         )
+    logging.info(f"Number of subgraphs created: {not_skipped + skipped}")
 
 
 def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
@@ -85,20 +99,30 @@ def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
     size : int, default=2
         Neighborhood size used for subgraph construction, inclusive.
     """
+    logging.info("Using moore neighborhood all method")
+
     if size < 1:
         raise ValueError("size must be at least 1")
 
-    added_any = False
+    skipped = 0
+    not_skipped = 0
     for iterator, subgraph in enumerate(_get_moore_subgraph(graph.vertex_list, size)):
         if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+            skipped += 1
             continue
-        added_any = True
+        not_skipped += 1
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
 
-    if not added_any:
+    if skipped != 0:
+        logging.warning(
+            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+        )
+
+    if not_skipped == 0:
         raise ValueError(
             "No subgraphs were created because every Moore neighborhood had fewer than 3 coarse vertices"
         )
+    logging.info(f"Number of subgraphs created: {not_skipped + skipped}")
 
 
 def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
@@ -112,18 +136,29 @@ def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
     size : int, default=2
         Neighborhood size used for subgraph construction, inclusive.
     """
+    logging.info("Using depth subgraphs method")
+
     if size < 1:
         raise ValueError("size must be at least 1")
 
-    added_any = False
+    skipped = 0
+    not_skipped = 0
     for iterator, subgraph in enumerate(
         _get_depth_subgraph(graph.coarse_vertices, size)
     ):
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
-        added_any = True
+        not_skipped += 1
 
-    if not added_any:
-        raise ValueError("No subgraphs were created because the graph has no coarse vertices")
+    if skipped != 0:
+        logging.warning(
+            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+        )
+
+    if not_skipped == 0:
+        raise ValueError(
+            "No subgraphs were created because the graph has no coarse vertices"
+        )
+    logging.info(f"Number of subgraphs created: {not_skipped + skipped}")
 
 
 def create_subgraphs_macrostructures(
@@ -151,6 +186,8 @@ def create_subgraphs_macrostructures(
     merge_distance : int, default=1
         Distance for merging neighborhoods into final subgraphs (macrostructure).
     """
+    logging.info("Using macrostructures method")
+
     for name, size in [
         ("micro_size", micro_size),
         ("connection_depth", connection_depth),
@@ -202,7 +239,8 @@ def create_subgraphs_macrostructures(
     # Select coarse vertices of the subgraph structure
     selected_centers = get_mis_set(coarse_to_structure.values(), 1)
 
-    added_any = False
+    skipped = 0
+    not_skipped = 0
 
     # Build final subgraphs by merging microstructures in each macrostructure
     for i, center in enumerate(selected_centers):
@@ -212,9 +250,15 @@ def create_subgraphs_macrostructures(
             merged_subgraph.update(local_subgraphs[neighbor])
 
         graph.add_subgraph(merged_subgraph, f"SubGraph{i}")
-        added_any = True
+        not_skipped += 1
 
-    if not added_any:
+    if skipped != 0:
+        logging.warning(
+            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+        )
+
+    if not_skipped == 0:
         raise ValueError(
             "No subgraphs were created because no macrostructure centers were selected"
         )
+    logging.info(f"Number of subgraphs created: {not_skipped + skipped}")
