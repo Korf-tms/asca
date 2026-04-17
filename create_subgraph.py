@@ -78,7 +78,7 @@ def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 2):
 
     if skipped != 0:
         logging.warning(
-            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+            f"{100 * skipped / (not_skipped + skipped)} subgraphs were skipped."
         )
 
     if not_skipped == 0:
@@ -115,7 +115,7 @@ def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
 
     if skipped != 0:
         logging.warning(
-            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+            f"{100 * skipped / (not_skipped + skipped)} subgraphs were skipped."
         )
 
     if not_skipped == 0:
@@ -146,12 +146,15 @@ def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
     for iterator, subgraph in enumerate(
         _get_depth_subgraph(graph.coarse_vertices, size)
     ):
+        if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+            skipped += 1
+            continue
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
         not_skipped += 1
 
     if skipped != 0:
         logging.warning(
-            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+            f"{100 * skipped / (not_skipped + skipped)}% subgraphs were skipped."
         )
 
     if not_skipped == 0:
@@ -196,65 +199,50 @@ def create_subgraphs_macrostructures(
         if size < 1:
             raise ValueError(f"{name} must be at least 1")
 
-    # Map original coarse vertices to structure vertices
-    coarse_to_structure = {v: Vertex(v.id) for v in graph.coarse_vertices}
+    # We need to create the 'subgraph structure', which is graph made of coarse vertices
 
-    # Build local neighborhoods (microsubgraphs)
-    local_subgraphs = {
-        coarse_to_structure[v]: set(get_neighborhood(v, micro_size))
-        for v in graph.coarse_vertices
-    }
+    # Creating the 'subgraph strucutre' vertices
+    subgraph_structure_vertices = {v: Vertex(v.id) for v in graph.coarse_vertices}
 
-    # Connect coarse vertices into subgraph structrue
+    # The vertices in the 'subgraph structure' are not connected, we need to connect them
     for start_vertex in graph.coarse_vertices:
-        structure_vertex = coarse_to_structure[start_vertex]
+        structure_vertex = subgraph_structure_vertices[start_vertex]
 
-        visited = {start_vertex}
-        depth = defaultdict(lambda: float("inf"))
-        depth[start_vertex] = 0
-        queue = deque([start_vertex])
+        possible_neighbors = get_neighborhood(start_vertex, connection_depth)
 
-        while queue:
-            current = queue.popleft()
-
-            if current in graph.coarse_vertices:
-                structure_vertex.adj.add(
-                    Edge(
-                        structure_vertex,
-                        coarse_to_structure[current],
-                        1,
-                    )
-                )
-
-            for neighbor in current.get_adj():
-                if depth[current] + 1 < depth[neighbor]:
-                    depth[neighbor] = depth[current] + 1
-
-                if depth[current] >= connection_depth or neighbor in visited:
-                    continue
-
-                visited.add(neighbor)
-                queue.append(neighbor)
+        for vertex in possible_neighbors:
+            if vertex not in graph.coarse_vertices or vertex == start_vertex:
+                continue
+            structure_vertex_neighbor = subgraph_structure_vertices[vertex]
+            structure_vertex.adj.add(Edge(structure_vertex, structure_vertex_neighbor, 1))
 
     # Select coarse vertices of the subgraph structure
-    selected_centers = get_mis_set(coarse_to_structure.values(), 1)
+    selected_centers = get_mis_set(subgraph_structure_vertices.values(), 1)
+
+    # Build 'microstructures' for each voarse vertex, which serves as its center
+    microstructures = {
+        subgraph_structure_vertices[v]: set(get_neighborhood(v, micro_size))
+        for v in graph.coarse_vertices
+    }
 
     skipped = 0
     not_skipped = 0
 
-    # Build final subgraphs by merging microstructures in each macrostructure
     for i, center in enumerate(selected_centers):
-        merged_subgraph = set(local_subgraphs[center])
+        merged_subgraph = set(microstructures[center])
 
         for neighbor in get_neighborhood(center, size=merge_distance):
-            merged_subgraph.update(local_subgraphs[neighbor])
-
+            if neighbor in microstructures:
+                merged_subgraph.update(microstructures[neighbor])
+        if len([vertex for vertex in merged_subgraph if vertex in graph.coarse_vertices]) < 3:
+            skipped += 1
+            continue
         graph.add_subgraph(merged_subgraph, f"SubGraph{i}")
         not_skipped += 1
 
     if skipped != 0:
         logging.warning(
-            f"{((not_skipped + skipped)/100 * skipped)} subgraphs were skipped."
+            f"{100 * skipped / (not_skipped + skipped)}% subgraphs were skipped."
         )
 
     if not_skipped == 0:
