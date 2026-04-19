@@ -1,8 +1,7 @@
-from scipy.sparse import eye, diags
+from scipy.sparse import eye
 from scipy.sparse.linalg import eigsh, cg, inv
 import pathlib as pl
 import numpy as np
-from numpy import asarray
 import h5py
 import utils
 
@@ -34,50 +33,47 @@ class Evaluator:
             for key in file.keys():
                 if key.startswith("iteration"):
                     iterations.append(int(key.replace("iteration", "")))
-            iterations = sorted(i for i in iterations if i != max(iterations))
-            return iterations
+            return list(sorted(iterations))
 
     def _read_iteration(self, iteration: int):
         with h5py.File(self.input_file, mode="r") as file:
             iteration_group = file[f"iteration{iteration}"]
-            mat = utils.read_csr_matrix(iteration_group["adj_matrix"])
-
-            coarse = 0
-            subgraph_mean = 0
-            if "coarse_count" in iteration_group.keys():
-                coarse = int(iteration_group["coarse_count"][()])
-            if "subgraph_size" in iteration_group.keys():
-                subgraph_mean = int(iteration_group["subgraph_size"][()])
-        return mat, coarse, subgraph_mean
+            adj_mat = utils.read_csr_matrix(iteration_group["adj_matrix"])
+            approximation = utils.read_csr_matrix(iteration_group["approximation"])
+            coarse = int(iteration_group["coarse_count"][()])
+            subgraph_mean = int(iteration_group["subgraph_size"][()])
+        return adj_mat, approximation, coarse, subgraph_mean
 
     def _get_matrices(self, iteration: int):
+        adjacency_matrix, approximation, coarse_count, subgraph_mean = (
+            self._read_iteration(iteration)
+        )
+
         if iteration in self.schur_dict:
             schur = self.schur_dict[iteration]
-            adj_mat, _, mean_subgraph = self._read_iteration(iteration)
         else:
-            adj_mat, vertices_coarse, mean_subgraph = self._read_iteration(iteration)
-            schur = schur_complement(adj_mat, vertices_coarse)
+            schur = schur_complement(adjacency_matrix, coarse_count)
             schur = schur + eye(schur.shape[0], format="csr") * 1e-5
             self.schur_dict[iteration] = schur
 
-        approximation, _, _ = self._read_iteration(iteration + 1)
-        degrees = asarray(approximation.sum(axis=1)).ravel()
-        approximation = diags(degrees, format="csr") - approximation
-
         approximation = approximation + eye(approximation.shape[0], format="csr") * 1e-5
 
-        vertices = adj_mat.shape[0]
-        vertices_coarse = schur.shape[0]
+        vertices = adjacency_matrix.shape[0]
+        vertices_coarse = coarse_count
 
-        return schur, approximation, vertices, vertices_coarse, mean_subgraph
+        return schur, approximation, vertices, vertices_coarse, subgraph_mean
 
     def cg_evaluation(self, iteration: list[int] = None):
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            schur_matrix, approximation_matrix, vertex_count, coarse_count, mean_subgraph = (
-                self._get_matrices(current_iteration)
-            )
+            (
+                schur_matrix,
+                approximation_matrix,
+                vertex_count,
+                coarse_count,
+                mean_subgraph,
+            ) = self._get_matrices(current_iteration)
 
             ones = np.ones(approximation_matrix.shape[0])
 
@@ -111,15 +107,15 @@ class Evaluator:
                     "iteration_count": iteration_count,
                     "info": info,
                     "error_history": error_history,
-                    "mean_subgraph": mean_subgraph
+                    "mean_subgraph": mean_subgraph,
                 },
             )
 
-    def eigsh_evaluation(self, iteration: list[int] = []):
+    def eigsh_evaluation(self, iteration: list[int] = None):
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            schur_matrix, approximation_matrix, _, _ , _= self._get_matrices(
+            schur_matrix, approximation_matrix, _, _, _ = self._get_matrices(
                 current_iteration
             )
 
