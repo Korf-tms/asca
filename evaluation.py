@@ -22,7 +22,6 @@ class Evaluator:
         )
 
         self.schur_dict = dict()
-        self.approximation_dict = dict()
 
         utils.create_folder(DATA_FOLDER)
 
@@ -44,44 +43,42 @@ class Evaluator:
             mat = utils.read_csr_matrix(iteration_group["adj_matrix"])
 
             coarse = 0
+            subgraph_mean = 0
             if "coarse_count" in iteration_group.keys():
                 coarse = int(iteration_group["coarse_count"][()])
-        return mat, coarse
+            if "subgraph_size" in iteration_group.keys():
+                subgraph_mean = int(iteration_group["subgraph_size"][()])
+        return mat, coarse, subgraph_mean
 
     def _get_matrices(self, iteration: int):
         if iteration in self.schur_dict:
             schur = self.schur_dict[iteration]
-            adj_mat, _ = self._read_iteration(iteration)
+            adj_mat, _, mean_subgraph = self._read_iteration(iteration)
         else:
-            adj_mat, vertices_coarse = self._read_iteration(iteration)
+            adj_mat, vertices_coarse, mean_subgraph = self._read_iteration(iteration)
             schur = schur_complement(adj_mat, vertices_coarse)
+            schur = schur + eye(schur.shape[0], format="csr") * 1e-5
             self.schur_dict[iteration] = schur
 
-        if iteration in self.approximation_dict:
-            approximation = self.approximation_dict[iteration]
-        else:
-            approximation, _ = self._read_iteration(iteration + 1)
-            self.approximation_dict[iteration] = approximation
-
-        vertices = adj_mat.shape[0]
-        vertices_coarse = schur.shape[0]
-
+        approximation, _, _ = self._read_iteration(iteration + 1)
         degrees = asarray(approximation.sum(axis=1)).ravel()
         approximation = diags(degrees, format="csr") - approximation
 
         approximation = approximation + eye(approximation.shape[0], format="csr") * 1e-5
-        schur = schur + eye(schur.shape[0], format="csr") * 1e-5
 
-        return schur, approximation, vertices, vertices_coarse
+        vertices = adj_mat.shape[0]
+        vertices_coarse = schur.shape[0]
+
+        return schur, approximation, vertices, vertices_coarse, mean_subgraph
 
     def cg_evaluation(self, iteration: list[int] = None):
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            schur_matrix, approximation_matrix, vertex_count, coarse_count = (
+            schur_matrix, approximation_matrix, vertex_count, coarse_count, mean_subgraph = (
                 self._get_matrices(current_iteration)
             )
-            
+
             ones = np.ones(approximation_matrix.shape[0])
 
             x_exact = np.random.rand(approximation_matrix.shape[0])
@@ -89,7 +86,7 @@ class Evaluator:
 
             rhs = schur_matrix @ x_exact
 
-            schur_matrix_inv = inv(schur_matrix.tocsc())
+            approximation_matrix_inv = inv(approximation_matrix.tocsc())
 
             iteration_count = 0
             error_history = []
@@ -100,7 +97,7 @@ class Evaluator:
                 error_history.append(np.linalg.norm(x_exact - x_current))
 
             x, info = cg(
-                A=approximation_matrix, M=schur_matrix_inv, b=rhs, callback=cg_callback
+                A=schur_matrix, M=approximation_matrix_inv, b=rhs, callback=cg_callback
             )
 
             error_history.append(np.linalg.norm(x_exact - x))
@@ -114,6 +111,7 @@ class Evaluator:
                     "iteration_count": iteration_count,
                     "info": info,
                     "error_history": error_history,
+                    "mean_subgraph": mean_subgraph
                 },
             )
 
@@ -121,13 +119,14 @@ class Evaluator:
         iterations = iteration if iteration else self._get_iterations()
 
         for current_iteration in iterations:
-            schur_matrix, approximation_matrix, _, _ = self._get_matrices(
+            schur_matrix, approximation_matrix, _, _ , _= self._get_matrices(
                 current_iteration
             )
 
             eigenvalues, eigenvectors = eigsh(A=schur_matrix, M=approximation_matrix)
 
             condition_number = eigenvalues.max() / eigenvalues.min()
+            eigenvalues_mean = np.mean(eigenvalues)
 
             utils.write_data(
                 self.output_file,
@@ -136,5 +135,6 @@ class Evaluator:
                     "eigenvalues": eigenvalues,
                     "eigenvectors": eigenvectors,
                     "condition_number": condition_number,
+                    "eigenvalues_mean": eigenvalues_mean,
                 },
             )

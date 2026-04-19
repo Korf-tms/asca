@@ -151,8 +151,8 @@ def run_approximation(config: AscaConfig):
                     subgraph_creation_method=step.subgraph_creation_method,
                     subgraph_creation_method_arguments=step.subgraph_creation_method_arguments,
                 )
-
-                store_iteration(step.output_file, current_iteration, current_graph)
+                subgraph_mean = np.mean([len(subgraph.vertex_list) for subgraph in current_graph.subgraph_list])
+                store_iteration(step.output_file, current_iteration, current_graph.to_adj_matrix(sorting=current_graph.vertex_sort), subgraph_mean, current_graph.coarse_vertices_count)
 
                 approximation_matrix = laplacian_to_adj_mat(approximation_matrix)
                 current_graph = graph_io.from_coo(
@@ -160,30 +160,30 @@ def run_approximation(config: AscaConfig):
                 )
                 current_iteration += 1
 
-            with h5py.File(step.output_file, mode="a") as file:
-                iteration_group = file.require_group(f"iteration{current_iteration}")
-                adj_mat_group = iteration_group.require_group("adj_matrix")
-                utils.store_csr_matrix(adj_mat_group, approximation_matrix)
+            store_iteration(step.output_file, current_iteration, approximation_matrix, 0, 0)
         except Exception as e:
             print(f"Error at {step.coarse_selection_method_name}: {step.coarse_selection_method_arguments}, {step.subgraph_creation_method_name}: {step.subgraph_creation_method_arguments}")
             print(e)
 
 def laplacian_to_adj_mat(laplacian: csr_matrix) -> csr_matrix:
-    adj_matrix: csr_matrix = -laplacian
+    adj_matrix: csr_matrix = laplacian.copy()
+    adj_matrix = -adj_matrix
     adj_matrix.setdiag(0)
     adj_matrix.eliminate_zeros()
     return adj_matrix
 
 
-def store_iteration(path: str | Path, iteration: int, graph: OriginalGraph):
+def store_iteration(path: str | Path, iteration: int, adj_matrix: csr_matrix, subgraph_count : int, coarse_count : int):
     with h5py.File(path, mode="a") as file:
         iteration_group = file.require_group(f"iteration{iteration}")
         adj_mat_group = iteration_group.require_group("adj_matrix")
         utils.store_csr_matrix(
             adj_mat_group,
-            graph.to_adj_matrix(sorting=graph.vertex_sort),
+            adj_matrix
         )
-        iteration_group.create_dataset("coarse_count", data=graph.coarse_vertices_count)
+        iteration_group.create_dataset("dense", data=adj_matrix.todense())
+        iteration_group.create_dataset("subgraph_size", data=subgraph_count)
+        iteration_group.create_dataset("coarse_count", data=coarse_count)
 
 
 def calculate_approximation(
@@ -205,11 +205,6 @@ def calculate_approximation(
     start_time = time.time()
     subgraph_creation_method(in_graph, **subgraph_creation_method_arguments)
     logger.info(f"Graph creation took {time.time() - start_time}s")
-
-    # temporary
-    subgraph_counts = [len(subgraph.vertex_list) for subgraph in in_graph.subgraph_list]
-    with open("pes.txt", "a") as file:
-        file.write(f"{statistics.mean(subgraph_counts)}\n")
 
     start_time = time.time()
     approximation_matrix = csr_matrix(
