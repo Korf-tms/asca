@@ -6,8 +6,7 @@ from numpy import float64
 
 class Edge:
     """
-    Representation of an undirected edge between two distinct vertices.
-    This means the graph constructed from these edges is undirected and with no self loops.
+    Representation of an ordered edge between two distinct vertices.
 
     Parameters
     ----------
@@ -38,7 +37,7 @@ class Edge:
         self.second = second
         self.weight = weight
         self.multiplicity = 0
-        self._unique = frozenset((self.first, self.second))
+        self._unique = (self.first, self.second)
 
     def __hash__(self):
         return hash(self._unique)
@@ -60,11 +59,7 @@ class Edge:
         Vertex
             The other endpoint of the edge.
         """
-        if vertex == self.first:
-            return self.second
-        if vertex == self.second:
-            return self.first
-        raise ValueError("Vertex not in edge.")
+        return self.second
 
 
 class Vertex:
@@ -176,7 +171,7 @@ class Graph:
         if sorting is None:
             vertex_list = self.vertex_list
         else:
-            vertex_list = sorted(self.vertex_list, key=sorting)
+            vertex_list = list(sorted(self.vertex_list, key=sorting))
         neighbor_set = set(vertex_list)
         mapping = {v: i for i, v in enumerate(vertex_list)}
 
@@ -186,11 +181,10 @@ class Graph:
         for vertex in vertex_list:
             row_idx = mapping[vertex]
             for edge in vertex.adj:
-                connected = edge.get_other(vertex)
-                if connected not in neighbor_set:
+                if edge.second not in neighbor_set:
                     continue
                 row.append(row_idx)
-                col.append(mapping[connected])
+                col.append(mapping[edge.second])
                 val.append(
                     edge.weight if not divide_edges else edge.weight / edge.multiplicity
                 )
@@ -266,6 +260,15 @@ class OriginalGraph(Graph):
         for edge in edges:
             edge.multiplicity += 1
 
+    def remove_vertex(self, vertex: Vertex):
+        for neighbor in vertex.get_adj():
+            ro_remove = set()
+            for edge in neighbor.adj:
+                if edge.first == vertex or edge.second == vertex:
+                    ro_remove.add(edge)
+            neighbor.adj.difference_update(ro_remove)
+        self.vertex_list.remove(vertex)
+
     def vertex_sort(self, vertex):
         """
         Sorting key for vertices.
@@ -319,6 +322,6 @@ class SubGraph(Graph):
         self.coarse_vertices_count = len(
             [vertex for vertex in vertex_list if vertex in self.parent.coarse_vertices]
         )
-        self.sorted_vertex_list = list(sorted(
-            self.vertex_list, key=self.parent.vertex_sort, reverse=False
-        ))
+        self.sorted_vertex_list = list(
+            sorted(self.vertex_list, key=self.parent.vertex_sort, reverse=False)
+        )

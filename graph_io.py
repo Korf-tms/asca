@@ -106,23 +106,12 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
     for row, col, val in zip(rows, cols, values):
         if row == col:
             continue
-
-        u = min(int(row), int(col))
-        v = max(int(row), int(col))
-
-        vertex_row = vertex_dictionary[u]
-        vertex_col = vertex_dictionary[v]
+        vertex_row = vertex_dictionary[int(row)]
+        vertex_col = vertex_dictionary[int(col)]
         edge = Edge(vertex_row, vertex_col, val)
         vertex_row.adj.add(edge)
-        vertex_col.adj.add(edge)
-    
-    no_isolated_vertices = set()
-    for vertex in vertex_dictionary.values():
-        if len(vertex.adj) == 0:
-            continue
-        no_isolated_vertices.add(vertex)
 
-    return cls(no_isolated_vertices)
+    return cls(set(vertex_dictionary.values()))
 
 
 def from_csv(path, cls=Graph):
@@ -237,5 +226,5 @@ def from_mtx(path, cls=Graph):
     Graph
         An instance of cls constructed from the matrix data.
     """
-    adj_mat : coo_matrix = spio.mmread(path, spmatrix=True)
+    adj_mat: coo_matrix = spio.mmread(path, spmatrix=True)
     return from_coo(coo_mat=adj_mat, cls=cls)
