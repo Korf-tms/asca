@@ -121,8 +121,7 @@ class Evaluator:
 
             eigenvalues, eigenvectors = eigsh(A=schur_matrix, M=approximation_matrix)
 
-            condition_number = eigenvalues.max() / eigenvalues.min()
-            eigenvalues_mean = np.mean(eigenvalues)
+            condition_number = eigenvalues.max() / 1
 
             utils.write_data(
                 self.output_file,
@@ -131,6 +130,5 @@ class Evaluator:
                     "eigenvalues": eigenvalues,
                     "eigenvectors": eigenvectors,
                     "condition_number": condition_number,
-                    "eigenvalues_mean": eigenvalues_mean,
                 },
             )
