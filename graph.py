@@ -215,8 +215,8 @@ class OriginalGraph(Graph):
 
     def __init__(self, vertex_list: set[Vertex] | list[Vertex], name="OriginalGraph"):
         super().__init__(vertex_list, name)
-        self.coarse_vertices: set[Vertex] = []
-        self.subgraph_list: set[SubGraph] = []
+        self.coarse_vertices: set[Vertex] = set()
+        self.subgraph_list: set[SubGraph] = set()
 
     def set_coarse(self, coarse_vertices: set[Vertex]):
         """
@@ -235,12 +235,12 @@ class OriginalGraph(Graph):
                 sorted(self.vertex_list, key=self.vertex_sort, reverse=False)
             )
         }
-
+    
     def add_subgraph(
         self, subgraph_vertices: list[Vertex] | set[Vertex], name: str = None
     ) -> None:
         """
-        Add a subgraph and update edge multiplicities.
+        Add a subgraph.
 
         Parameters
         ----------
@@ -249,16 +249,22 @@ class OriginalGraph(Graph):
         name : str, optional
             Name of the subgraph.
         """
-        subgraph = SubGraph(vertex_list=subgraph_vertices, graph=self, name=name)
+        subgraph = SubGraph(vertex_list=set(subgraph_vertices), graph=self, name=name)
         self.subgraph_list.append(subgraph)
 
-        edges = set()
-        # find all the edges
-        for v in subgraph_vertices:
-            edges.update(v.get_in_subgraph(subgraph_vertices))
-        # change edge multiplicity
-        for edge in edges:
-            edge.multiplicity += 1
+    def update_edge_multiplicities(self) -> None:
+        subgraph_membership = {vertex: set() for vertex in self.vertex_list}
+
+        for index, subgraph in enumerate(self.subgraph_list):
+            for vertex in subgraph.vertex_list:
+                subgraph_membership[vertex].add(index)
+
+        for vertex in self.vertex_list:
+            for edge in vertex.adj:
+                edge.multiplicity = len(
+                    subgraph_membership[edge.first].intersection(subgraph_membership[edge.second])
+                )
+
 
     def remove_vertex(self, vertex: Vertex):
         for neighbor in vertex.get_adj():

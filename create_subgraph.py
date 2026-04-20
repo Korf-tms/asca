@@ -1,4 +1,3 @@
-from collections import defaultdict, deque
 import logging
 
 from graph import Vertex, Edge, OriginalGraph
@@ -70,7 +69,7 @@ def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 2):
     for iterator, subgraph in enumerate(
         _get_moore_subgraph(graph.coarse_vertices, size)
     ):
-        if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+        if len(subgraph & graph.coarse_vertices) < 3:
             skipped += 1
             continue
         not_skipped += 1
@@ -107,7 +106,7 @@ def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
     skipped = 0
     not_skipped = 0
     for iterator, subgraph in enumerate(_get_moore_subgraph(graph.vertex_list, size)):
-        if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+        if len(subgraph & graph.coarse_vertices) < 3:
             skipped += 1
             continue
         not_skipped += 1
@@ -146,7 +145,7 @@ def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
     for iterator, subgraph in enumerate(
         _get_depth_subgraph(graph.coarse_vertices, size)
     ):
-        if len([vertex for vertex in subgraph if vertex in graph.coarse_vertices]) < 3:
+        if len(subgraph & graph.coarse_vertices) < 3:
             skipped += 1
             continue
         graph.add_subgraph(subgraph, f"SubGraph{iterator}")
@@ -214,7 +213,9 @@ def create_subgraphs_macrostructures(
             if vertex not in graph.coarse_vertices or vertex == start_vertex:
                 continue
             structure_vertex_neighbor = subgraph_structure_vertices[vertex]
-            structure_vertex.adj.add(Edge(structure_vertex, structure_vertex_neighbor, 1))
+            structure_vertex.adj.add(
+                Edge(structure_vertex, structure_vertex_neighbor, 1)
+            )
 
     # Select coarse vertices of the subgraph structure
     selected_centers = get_mis_set(subgraph_structure_vertices.values(), 1)
@@ -234,7 +235,9 @@ def create_subgraphs_macrostructures(
         for neighbor in get_neighborhood(center, size=merge_distance):
             if neighbor in microstructures:
                 merged_subgraph.update(microstructures[neighbor])
-        if len([vertex for vertex in merged_subgraph if vertex in graph.coarse_vertices]) < 3:
+        if (
+            len(merged_subgraph & graph.coarse_vertices) < 3
+        ):
             skipped += 1
             continue
         graph.add_subgraph(merged_subgraph, f"SubGraph{i}")
