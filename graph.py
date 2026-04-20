@@ -250,7 +250,7 @@ class OriginalGraph(Graph):
             Name of the subgraph.
         """
         subgraph = SubGraph(vertex_list=set(subgraph_vertices), graph=self, name=name)
-        self.subgraph_list.append(subgraph)
+        self.subgraph_list.add(subgraph)
 
     def update_edge_multiplicities(self) -> None:
         subgraph_membership = {vertex: set() for vertex in self.vertex_list}
