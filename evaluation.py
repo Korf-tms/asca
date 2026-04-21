@@ -96,8 +96,6 @@ class Evaluator:
                 A=schur_matrix, M=approximation_matrix_inv, b=rhs, callback=cg_callback
             )
 
-            error_history.append(np.linalg.norm(x_exact - x))
-
             utils.write_data(
                 self.output_file,
                 f"iteration{current_iteration}/",
