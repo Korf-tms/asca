@@ -7,3 +7,5 @@ data/
 matrices/
 schur_cache/
 evaluation/
+
+log.log
