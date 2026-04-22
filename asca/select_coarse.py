@@ -1,7 +1,8 @@
 import logging
 
-from graph import OriginalGraph, Vertex
-from graphutils import get_mis_set, get_moore_neighborhood, get_mis_set_ordered
+from .graph import OriginalGraph, Vertex
+from .graphutils import get_mis_set, get_moore_neighborhood, get_mis_set_ordered
+
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,8 @@ def mis(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     logger.info(f"Number of coarse vertices: {len(mis)}")
     return mis
 
-def _mis_ordered(vertex_list : list[Vertex], size: int = 1) -> set[Vertex]:
+
+def _mis_ordered(vertex_list: list[Vertex], size: int = 1) -> set[Vertex]:
     """
     Select coarse vertices using a maximal independent set (MIS).
     The ordering of the vertices matters, the vertex on 0th index is taken first.
@@ -62,6 +64,7 @@ def _mis_ordered(vertex_list : list[Vertex], size: int = 1) -> set[Vertex]:
     logger.info(f"Number of coarse vertices: {len(mis)}")
     return mis
 
+
 def mis_degree_asc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     """
     Select coarse vertices using a maximal independent set (MIS).
@@ -79,9 +82,12 @@ def mis_degree_asc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     set[Vertex]
         Selected coarse vertices.
     """
-    result = _mis_ordered(list(sorted(graph.vertex_list, key=lambda v: len(v.adj), reverse=True)), size)
+    result = _mis_ordered(
+        list(sorted(graph.vertex_list, key=lambda v: len(v.adj), reverse=False)), size
+    )
     graph.set_coarse(result)
     return result
+
 
 def mis_degree_desc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     """
@@ -100,9 +106,12 @@ def mis_degree_desc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     set[Vertex]
         Selected coarse vertices.
     """
-    result = _mis_ordered(list(sorted(graph.vertex_list, key=lambda v: len(v.adj), reverse=False)), size)
+    result = _mis_ordered(
+        list(sorted(graph.vertex_list, key=lambda v: len(v.adj), reverse=True)), size
+    )
     graph.set_coarse(result)
     return result
+
 
 def mis_strength_desc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     """
@@ -121,9 +130,19 @@ def mis_strength_desc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     set[Vertex]
         Selected coarse vertices.
     """
-    result = _mis_ordered(list(sorted(graph.vertex_list, key=lambda v: sum([e.weight for e in v.adj]), reverse=False)), size)
+    result = _mis_ordered(
+        list(
+            sorted(
+                graph.vertex_list,
+                key=lambda v: sum([e.weight for e in v.adj]),
+                reverse=False,
+            )
+        ),
+        size,
+    )
     graph.set_coarse(result)
     return result
+
 
 def mis_strength_asc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     """
@@ -142,9 +161,19 @@ def mis_strength_asc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     set[Vertex]
         Selected coarse vertices.
     """
-    result = _mis_ordered(list(sorted(graph.vertex_list, key=lambda v: sum([e.weight for e in v.adj]), reverse=True)), size)
+    result = _mis_ordered(
+        list(
+            sorted(
+                graph.vertex_list,
+                key=lambda v: sum([e.weight for e in v.adj]),
+                reverse=True,
+            )
+        ),
+        size,
+    )
     graph.set_coarse(result)
     return result
+
 
 def moore(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     """

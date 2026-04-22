@@ -1,10 +1,10 @@
-from scipy.sparse import coo_matrix, issparse
+from scipy.sparse import coo_matrix
 import pandas as pd
 import h5py
 import scipy.io as spio
 import pathlib as pl
 
-from graph import Edge, Graph, Vertex
+from .graph import Edge, Graph, Vertex
 
 
 def from_file(path: str | pl.Path, cls=Graph):

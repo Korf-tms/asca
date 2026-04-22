@@ -235,7 +235,7 @@ class OriginalGraph(Graph):
                 sorted(self.vertex_list, key=self.vertex_sort, reverse=False)
             )
         }
-    
+
     def add_subgraph(
         self, subgraph_vertices: list[Vertex] | set[Vertex], name: str = None
     ) -> None:
@@ -262,9 +262,10 @@ class OriginalGraph(Graph):
         for vertex in self.vertex_list:
             for edge in vertex.adj:
                 edge.multiplicity = len(
-                    subgraph_membership[edge.first].intersection(subgraph_membership[edge.second])
+                    subgraph_membership[edge.first].intersection(
+                        subgraph_membership[edge.second]
+                    )
                 )
-
 
     def remove_vertex(self, vertex: Vertex):
         for neighbor in vertex.get_adj():

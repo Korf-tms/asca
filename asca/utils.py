@@ -38,20 +38,24 @@ def get_unique_path(
     return unique_path
 
 
-def store_csr_matrix(group: h5py.Group, matrix: csr_matrix):
+def write_csr_matrix(group: h5py.Group | h5py.File, matrix: csr_matrix):
     group.create_dataset("data", data=matrix.data)
     group.create_dataset("indices", data=matrix.indices)
     group.create_dataset("indptr", data=matrix.indptr)
     group.create_dataset("shape", data=matrix.shape)
 
 
-def read_csr_matrix(group: h5py.Group) -> csr_matrix:
+def read_csr_matrix(group: h5py.Group | h5py.File) -> csr_matrix:
     data = group["data"][:]
     indices = group["indices"][:]
     indptr = group["indptr"][:]
     shape = tuple(group["shape"][:])
 
     return csr_matrix((data, indices, indptr), shape=shape, dtype=np.float64)
+
+
+def read_int(group: h5py.Group | h5py.File, key: str):
+    return int(group[key][()])
 
 
 def write_data(filename: str, group: str, data: dict):

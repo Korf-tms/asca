@@ -1,7 +1,8 @@
 import logging
 
-from graph import Vertex, Edge, OriginalGraph
-from graphutils import get_moore_neighborhood, get_mis_set, get_neighborhood
+from .graph import Vertex, Edge, OriginalGraph
+from .graphutils import get_moore_neighborhood, get_mis_set, get_neighborhood
+
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
     logging.info(f"Number of subgraphs created: {not_skipped + skipped}")
 
 
-def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
+def depth(graph: OriginalGraph, size: int = 2):
     """
     Create subgraphs around coarse vertices, each subgeraph is a neighborhood of size.
 
@@ -163,7 +164,7 @@ def create_subgraphs_depth(graph: OriginalGraph, size: int = 2):
     logging.info(f"Number of subgraphs created: {not_skipped + skipped}")
 
 
-def create_subgraphs_macrostructures(
+def macrostructures(
     graph: OriginalGraph,
     micro_size=2,
     connection_depth=2,
@@ -235,9 +236,7 @@ def create_subgraphs_macrostructures(
         for neighbor in get_neighborhood(center, size=merge_distance):
             if neighbor in microstructures:
                 merged_subgraph.update(microstructures[neighbor])
-        if (
-            len(merged_subgraph & graph.coarse_vertices) < 3
-        ):
+        if len(merged_subgraph & graph.coarse_vertices) < 3:
             skipped += 1
             continue
         graph.add_subgraph(merged_subgraph, f"SubGraph{i}")

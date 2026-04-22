@@ -1,6 +1,6 @@
 from collections import deque
 
-from graph import Vertex
+from .graph import Vertex
 
 
 def get_neighborhood(vertex: Vertex, size: int = 1) -> set[Vertex]:
@@ -127,6 +127,7 @@ def get_mis_set(vertex_list: list[Vertex] | set[Vertex], size: int = 1) -> set[V
         mis_set.add(current)
         remaining_vertices.difference_update(get_neighborhood(current, size=size))
     return mis_set
+
 
 def get_mis_set_ordered(vertex_list: list[Vertex], size: int = 1) -> set[Vertex]:
     """

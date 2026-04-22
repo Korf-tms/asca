@@ -2,7 +2,7 @@ from scipy.sparse import diags, csr_matrix
 from scipy.sparse.linalg import spsolve
 from numpy import asarray, ones, float64
 
-from graph import SubGraph
+from .graph import SubGraph
 
 
 def schur_complement(sorted_adjacency_matrix, num_coarse):
