@@ -233,13 +233,27 @@ def eigsh_evaluation(iteration_data: Iteration):
 
     k = min(6, iteration_data.schur_complement_matrix.shape[0] - 1)
     start_time = time.perf_counter()
-    eigenvalues, _ = eigsh(
+    largest_eigenvalues = eigsh(
         A=iteration_data.schur_complement_matrix,
         M=iteration_data.approximation_matrix,
         k=k,
+        tol=1e-5,
+        which="LA",
+        return_eigenvectors=False
     )
+
+    smallest_eigenvalues = eigsh(
+        A=iteration_data.schur_complement_matrix,
+        M=iteration_data.approximation_matrix,
+        k=k,
+        tol=1e-5,
+        which="SA",
+        return_eigenvectors=False
+    )
+
     eigsh_time = time.perf_counter() - start_time
-    condition_number = eigenvalues.max()
+    
+    condition_number = max(largest_eigenvalues) / min(smallest_eigenvalues)
 
     logger.info(
         "Iteration %s: eigen solve took %fs",
@@ -248,6 +262,7 @@ def eigsh_evaluation(iteration_data: Iteration):
     )
 
     return {
-        "eigenvalues": eigenvalues,
+        "largest_eigenvalues": largest_eigenvalues,
+        "smallest_eigenvalues" : smallest_eigenvalues,
         "condition_number": condition_number,
     }
