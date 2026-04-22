@@ -5,6 +5,31 @@ from numpy import asarray, ones, float64
 from .graph import SubGraph
 
 
+def schur_complement_blocks(graph_laplacian, num_coarse):
+    """
+    Split graph laplacian into Schur complement blocks.
+
+    The graph Laplacian is assumed to be ordered so that coarse vertices
+    come first.
+
+    Parameters
+    ----------
+    graph_laplacian : csr_matrix
+        Graph laplacian with coarse vertices first.
+    num_coarse : int
+        Number of coarse vertices.
+
+    Returns
+    -------
+    (l_11, 1_22, l_21, l_12) : tuple[csr_matrix, csr_matrix, csr_matrix, csr_matrix]
+        Blocks of the Schur complement, where l_11 is coarse to coarse and l_22 fine to fine.
+    """
+    l_11 = graph_laplacian[:num_coarse, :num_coarse]
+    l_22 = graph_laplacian[num_coarse:, num_coarse:]
+    l_21 = graph_laplacian[num_coarse:, :num_coarse]
+    l_12 = graph_laplacian[:num_coarse, num_coarse:]
+    return l_11, l_22, l_21, l_12
+
 def schur_complement(sorted_adjacency_matrix, num_coarse):
     """
     Compute the Schur complement of a graph Laplacian.
@@ -30,10 +55,10 @@ def schur_complement(sorted_adjacency_matrix, num_coarse):
     degrees = asarray(sorted_adjacency_matrix.sum(axis=1)).ravel()
     graph_laplacian = diags(degrees, format="csr") - sorted_adjacency_matrix
 
-    l_11 = graph_laplacian[:num_coarse, :num_coarse]
-    l_22 = graph_laplacian[num_coarse:, num_coarse:].tocsc()
-    l_21 = graph_laplacian[num_coarse:, :num_coarse].tocsc()
-    l_12 = graph_laplacian[:num_coarse, num_coarse:]
+    l_11, l_22, l_21, l_12 = schur_complement_blocks(graph_laplacian, num_coarse)
+
+    l_22 = l_22.tocsc()
+    l_21 = l_21.tocsc()
 
     return l_11 - l_12 @ spsolve(l_22, l_21)
 
