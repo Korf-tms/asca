@@ -7,6 +7,7 @@ import h5py
 import numpy as np
 from scipy.sparse import csr_matrix, eye
 from scipy.sparse.linalg import LinearOperator, cg, eigsh, factorized
+from scipy.linalg import eigvalsh, eigvals
 
 from . import utils
 from .schur_complement import schur_complement
@@ -191,7 +192,7 @@ def _get_matrices(
         logger.info("Iteration %s: exact Schur complement computed", iteration)
         utils.create_folder(SCHUR_CACHE_DIRECTORY)
         with h5py.File(f"{SCHUR_CACHE_DIRECTORY}/{cache_key}.hdf5", mode="w") as file:
-            utils.store_csr_matrix(file, schur)
+            utils.write_csr_matrix(file, schur)
     else:
         logger.info("Iteration %s: loaded exact Schur complement from cache", iteration)
 
@@ -311,24 +312,34 @@ def eigsh_evaluation(iteration_data: Iteration):
 
     condition_number = max(largest_eigenvalue) / min(smallest_eigenvalue)
 
-    k = min(6, iteration_data.schur_complement_matrix.shape[0] - 1)
+    eigenvalues = 0
 
-    if iteration_data.schur_complement_matrix.shape[0] < 2000:
-        k = iteration_data.schur_complement_matrix.shape[0] - 1
-
-    logger.info(
-        "Iteration %s: computing eigenvalue spectrum sample with k=%s",
-        iteration_data.iteration,
-        k,
-    )
     start_time = time.perf_counter()
-    eigenvalues = eigsh(
-        A=iteration_data.schur_complement_matrix,
-        M=iteration_data.approximation_matrix,
-        k=k,
-        tol=1e-2,
-        return_eigenvectors=False,
-    )
+
+    if iteration_data.schur_complement_matrix.shape[0] < 20000:
+        logger.info(
+            "Iteration %s: computing all eigenvalues.",
+            iteration_data.iteration,
+        )
+        eigenvalues = eigvalsh(
+            a=iteration_data.schur_complement_matrix.todense(),
+            b=iteration_data.approximation_matrix.todense()
+        )
+    else:
+        k = min(6, iteration_data.schur_complement_matrix.shape[0] - 1)
+
+        logger.info(
+            "Iteration %s: computing eigenvalue spectrum sample with k=%s",
+            iteration_data.iteration,
+            k,
+        )
+        eigenvalues = eigsh(
+            A=iteration_data.schur_complement_matrix,
+            M=iteration_data.approximation_matrix,
+            k=k,
+            return_eigenvectors=False,
+        )
+
     logger.info(
         "Iteration %s: eigenvalue spectrum solve finished in %fs",
         iteration_data.iteration,

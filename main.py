@@ -3,6 +3,7 @@ import logging
 import pathlib as pl
 
 from asca import AscaConfig, EvaluatorConfig, run_evaluation, run_approximation
+from asca.visualization import cg_error_history, cg_residual_history, eigenvalues
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,7 +12,7 @@ logging.basicConfig(
 )
 
 # example of running asca
-
+"""
 grid_config = AscaConfig(
     filename="matrices/110x110.hdf5",
     coarse_selection_method=["moore"] * 3,
@@ -57,19 +58,18 @@ annulus_config = AscaConfig(
     output_file="data/annulus.hdf5",
     iterations=1,
 )
-"""
+
 run_approximation(annulus_config)
 
 olafu_config1 = AscaConfig(
     filename="matrices/olafu.mtx",
-    coarse_selection_method=["mis_strength_asc"] * 4,
-    coarse_selection_method_arguments=[{"size":1}] * 4,
-    subgraph_creation_method=["macrostructure"] * 4,
+    coarse_selection_method=["mis_strength_asc"] * 3,
+    coarse_selection_method_arguments=[{"size":1}] * 3,
+    subgraph_creation_method=["macrostructure"] * 3,
     subgraph_creation_method_arguments=[
         {"micro_size":3, "connection_depth":2, "merge_distance":1},
         {"micro_size":4, "connection_depth":2, "merge_distance":1},
         {"micro_size":5, "connection_depth":2, "merge_distance":1},
-        {"micro_size":6, "connection_depth":2, "merge_distance":1}
         ],
     output_file="data/olafu.hdf5",
     iterations=1
@@ -79,10 +79,10 @@ run_approximation(olafu_config1)
 
 olafu_config2 = AscaConfig(
     filename="matrices/olafu.mtx",
-    coarse_selection_method=["mis_strength_asc"] * 4,
-    coarse_selection_method_arguments=[{"size":1}] * 4,
-    subgraph_creation_method=["depth"] * 4,
-    subgraph_creation_method_arguments=[{"size":3}, {"size":4}, {"size":5}, {"size":6}],
+    coarse_selection_method=["mis_strength_asc"] * 3,
+    coarse_selection_method_arguments=[{"size":1}] * 3,
+    subgraph_creation_method=["depth"] * 3,
+    subgraph_creation_method_arguments=[{"size":3}, {"size":4}, {"size":5}],
     output_file="data/olafu.hdf5",
     iterations=1
 )
@@ -91,10 +91,10 @@ run_approximation(olafu_config2)
 
 ct2010_config1 = AscaConfig(
     filename="matrices/ct2010.mtx",
-    coarse_selection_method=["mis_strength_asc"] * 4,
-    coarse_selection_method_arguments=[{"size":1}] * 4,
-    subgraph_creation_method=["depth"] * 4,
-    subgraph_creation_method_arguments=[{"size":3}, {"size":4}, {"size":5}, {"size":6}],
+    coarse_selection_method=["mis_strength_asc"] * 3,
+    coarse_selection_method_arguments=[{"size":1}] * 3,
+    subgraph_creation_method=["depth"] * 3,
+    subgraph_creation_method_arguments=[{"size":3}, {"size":4}, {"size":5}],
     output_file="data/ct2010.hdf5",
     iterations=1
 )
@@ -103,14 +103,13 @@ run_approximation(ct2010_config1)
 
 ct2010_config2 = AscaConfig(
     filename="matrices/ct2010.mtx",
-    coarse_selection_method=["mis_strength_asc"] * 4,
-    coarse_selection_method_arguments=[{"size":1}] * 4,
-    subgraph_creation_method=["macrostructure"] * 4,
+    coarse_selection_method=["mis_strength_asc"] * 3,
+    coarse_selection_method_arguments=[{"size":1}] * 3,
+    subgraph_creation_method=["macrostructure"] * 3,
     subgraph_creation_method_arguments=[
         {"micro_size":3, "connection_depth":2, "merge_distance":1},
         {"micro_size":4, "connection_depth":2, "merge_distance":1},
         {"micro_size":5, "connection_depth":2, "merge_distance":1},
-        {"micro_size":6, "connection_depth":2, "merge_distance":1}
         ],
     output_file="data/ct2010.hdf5",
     iterations=1

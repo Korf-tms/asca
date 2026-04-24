@@ -100,6 +100,10 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
     if len(rows) == 0:
         return cls([])
 
+    rows = [abs(row) for row in rows]
+    cols = [abs(col) for col in cols]
+    values = [abs(val) for val in values]
+
     n = int(max(max(rows), max(cols)) + 1)
     vertex_dictionary = {i: Vertex(i) for i in range(n)}
 

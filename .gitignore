@@ -4,8 +4,8 @@ __*/
 .*/
 
 data/
-matrices/
 schur_cache/
 evaluation/
+figures/
 
 log.log
