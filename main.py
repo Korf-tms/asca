@@ -4,7 +4,6 @@ import pathlib as pl
 
 from asca import AscaConfig, EvaluatorConfig, run_evaluation, run_approximation
 
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
@@ -16,11 +15,11 @@ logging.basicConfig(
 grid_config = AscaConfig(
     filename="matrices/110x110.hdf5",
     coarse_selection_method=["moore"] * 3,
-    coarse_selection_method_arguments=[{"size":1}] * 3,
+    coarse_selection_method_arguments=[{"size": 1}] * 3,
     subgraph_creation_method=["moore_coarse"] * 3,
-    subgraph_creation_method_arguments=[{"size":2}, {"size":4}, {"size":10}],
+    subgraph_creation_method_arguments=[{"size": 2}, {"size": 4}, {"size": 10}],
     output_file="data/110x110.hdf5",
-    iterations=1
+    iterations=1,
 )
 
 run_approximation(grid_config)
@@ -28,11 +27,11 @@ run_approximation(grid_config)
 skirt_config1 = AscaConfig(
     filename="matrices/skirt.mtx",
     coarse_selection_method=["mis"] * 3,
-    coarse_selection_method_arguments=[{"size":1}] * 3,
+    coarse_selection_method_arguments=[{"size": 1}] * 3,
     subgraph_creation_method=["depth"] * 3,
-    subgraph_creation_method_arguments=[{"size":4}, {"size":6}, {"size":10}],
+    subgraph_creation_method_arguments=[{"size": 4}, {"size": 6}, {"size": 10}],
     output_file="data/skirt.hdf5",
-    iterations=1
+    iterations=1,
 )
 
 run_approximation(skirt_config1)
@@ -40,11 +39,11 @@ run_approximation(skirt_config1)
 skirt_config2 = AscaConfig(
     filename="matrices/skirt.mtx",
     coarse_selection_method=["mis_strength_desc"] * 3,
-    coarse_selection_method_arguments=[{"size":1}] * 3,
+    coarse_selection_method_arguments=[{"size": 1}] * 3,
     subgraph_creation_method=["depth"] * 3,
-    subgraph_creation_method_arguments=[{"size":4}, {"size":6}, {"size":10}],
+    subgraph_creation_method_arguments=[{"size": 4}, {"size": 6}, {"size": 10}],
     output_file="data/skirt.hdf5",
-    iterations=1
+    iterations=1,
 )
 
 run_approximation(skirt_config2)
@@ -52,13 +51,13 @@ run_approximation(skirt_config2)
 annulus_config = AscaConfig(
     filename="matrices/annulus.mtx",
     coarse_selection_method=["mis"] * 3,
-    coarse_selection_method_arguments=[{"size":1}] * 3,
+    coarse_selection_method_arguments=[{"size": 1}] * 3,
     subgraph_creation_method=["depth"] * 3,
-    subgraph_creation_method_arguments=[{"size":2}, {"size":4}, {"size":10}],
+    subgraph_creation_method_arguments=[{"size": 2}, {"size": 4}, {"size": 10}],
     output_file="data/annulus.hdf5",
-    iterations=1
+    iterations=1,
 )
-'''
+"""
 run_approximation(annulus_config)
 
 olafu_config1 = AscaConfig(
@@ -118,11 +117,15 @@ ct2010_config2 = AscaConfig(
 )
 
 run_approximation(ct2010_config2)
-'''
+"""
 # evaluates all results
 
 folder = pl.Path("data")
-files = [f"data/{p.name}" for p in folder.iterdir() if p.is_file() and "evaluation" not in p.stem]
+files = [
+    f"data/{p.name}"
+    for p in folder.iterdir()
+    if p.is_file() and "evaluation" not in p.stem
+]
 
 evauation_config = EvaluatorConfig(input_files=files)
 

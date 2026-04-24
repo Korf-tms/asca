@@ -3,7 +3,6 @@ import logging
 from .graph import Vertex, Edge, OriginalGraph
 from .graphutils import get_moore_neighborhood, get_mis_set, get_neighborhood
 
-
 logger = logging.getLogger(__name__)
 
 

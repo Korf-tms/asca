@@ -3,7 +3,6 @@ import logging
 from .graph import OriginalGraph, Vertex
 from .graphutils import get_mis_set, get_moore_neighborhood, get_mis_set_ordered
 
-
 logger = logging.getLogger(__name__)
 
 

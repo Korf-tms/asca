@@ -30,6 +30,7 @@ def schur_complement_blocks(graph_laplacian, num_coarse):
     l_12 = graph_laplacian[:num_coarse, num_coarse:]
     return l_11, l_22, l_21, l_12
 
+
 def schur_complement(sorted_adjacency_matrix, num_coarse):
     """
     Compute the Schur complement of a graph Laplacian.
