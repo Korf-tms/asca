@@ -13,10 +13,29 @@ from .graph import OriginalGraph
 from . import select_coarse
 from . import create_subgraph
 from . import schur_complement
-from . import graphio
+from . import graph_io
 from . import utils
 
 DATA_FOLDER = "data"
+DEFAULT_OUTPUT_FILE = "evaluation.hdf5"
+ITERATION_PREFIX = "iteration"
+HDF5_ADJACENCY_MATRIX = "adj_matrix"
+HDF5_APPROXIMATION_MATRIX = "approximation"
+HDF5_SUBGRAPH_SIZE = "subgraph_size"
+HDF5_COARSE_COUNT = "coarse_count"
+DEFAULT_SIZE_ARGUMENT = {"size": 1}
+DEFAULT_COARSE_SELECTION_METHOD = "mis"
+DEFAULT_SUBGRAPH_CREATION_METHOD = "depth"
+COARSE_METHOD_MIS = "mis"
+COARSE_METHOD_MIS_DEGREE_ASC = "mis_degree_asc"
+COARSE_METHOD_MIS_DEGREE_DESC = "mis_degree_desc"
+COARSE_METHOD_MIS_STRENGTH_ASC = "mis_strength_asc"
+COARSE_METHOD_MIS_STRENGTH_DESC = "mis_strength_desc"
+COARSE_METHOD_MOORE = "moore"
+SUBGRAPH_METHOD_DEPTH = "depth"
+SUBGRAPH_METHOD_MOORE_ALL = "moore_all"
+SUBGRAPH_METHOD_MOORE_COARSE = "moore_coarse"
+SUBGRAPH_METHOD_MACROSTRUCTURE = "macrostructure"
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +54,9 @@ class Config:
 @dataclass
 class AscaConfig:
     filename: pl.Path | str
-    coarse_selection_method: str | list[str] = "mis"
+    coarse_selection_method: str | list[str] = DEFAULT_COARSE_SELECTION_METHOD
     coarse_selection_method_arguments: dict | list[dict] | None = None
-    subgraph_creation_method: str | list[str] = "depth"
+    subgraph_creation_method: str | list[str] = DEFAULT_SUBGRAPH_CREATION_METHOD
     subgraph_creation_method_arguments: dict | list[dict] | None = None
     output_file: pl.Path | str | None = None
     iterations: int = 1
@@ -46,18 +65,18 @@ class AscaConfig:
     config: list[Config] = field(init=False)
 
     coarse_selection_methods = {
-        "mis": select_coarse.mis,
-        "mis_degree_asc": select_coarse.mis_degree_asc,
-        "mis_degree_desc": select_coarse.mis_degree_desc,
-        "mis_strength_asc": select_coarse.mis_strength_asc,
-        "mis_strength_desc": select_coarse.mis_strength_desc,
-        "moore": select_coarse.moore,
+        COARSE_METHOD_MIS: select_coarse.mis,
+        COARSE_METHOD_MIS_DEGREE_ASC: select_coarse.mis_degree_asc,
+        COARSE_METHOD_MIS_DEGREE_DESC: select_coarse.mis_degree_desc,
+        COARSE_METHOD_MIS_STRENGTH_ASC: select_coarse.mis_strength_asc,
+        COARSE_METHOD_MIS_STRENGTH_DESC: select_coarse.mis_strength_desc,
+        COARSE_METHOD_MOORE: select_coarse.moore,
     }
     create_subgraphs_methods = {
-        "depth": create_subgraph.depth,
-        "moore_all": create_subgraph.moore_neighborhood_all,
-        "moore_coarse": create_subgraph.moore_neighborhood_around_coarse,
-        "macrostructure": create_subgraph.macrostructures,
+        SUBGRAPH_METHOD_DEPTH: create_subgraph.depth,
+        SUBGRAPH_METHOD_MOORE_ALL: create_subgraph.moore_neighborhood_all,
+        SUBGRAPH_METHOD_MOORE_COARSE: create_subgraph.moore_neighborhood_around_coarse,
+        SUBGRAPH_METHOD_MACROSTRUCTURE: create_subgraph.macrostructures,
     }
 
     @staticmethod
@@ -73,15 +92,15 @@ class AscaConfig:
 
         coarse_selection_method_arguments = self.coarse_selection_method_arguments
         if coarse_selection_method_arguments is None:
-            coarse_selection_method_arguments = {"size": 1}
+            coarse_selection_method_arguments = DEFAULT_SIZE_ARGUMENT
 
         subgraph_creation_method_arguments = self.subgraph_creation_method_arguments
         if subgraph_creation_method_arguments is None:
-            subgraph_creation_method_arguments = {"size": 1}
+            subgraph_creation_method_arguments = DEFAULT_SIZE_ARGUMENT
 
         self.path = pl.Path(self.filename)
         self.base_output_file = (
-            pl.Path(f"{DATA_FOLDER}/evaluation.hdf5")
+            pl.Path(DATA_FOLDER) / DEFAULT_OUTPUT_FILE
             if self.output_file is None
             else pl.Path(self.output_file)
         )
@@ -160,7 +179,7 @@ def run_approximation(config: AscaConfig):
 
             logger.info("Reading input graph")
             start_time = time.perf_counter()
-            current_graph: OriginalGraph = graphio.from_file(
+            current_graph: OriginalGraph = graph_io.from_file(
                 path=config.path, cls=OriginalGraph
             )
             logger.info(
@@ -212,7 +231,7 @@ def run_approximation(config: AscaConfig):
                 logger.info("Iteration %s: preparing next graph", current_iteration)
                 start_time = time.perf_counter()
                 approximation_matrix = laplacian_to_adj_mat(approximation_matrix)
-                current_graph = graphio.from_coo(
+                current_graph = graph_io.from_coo(
                     coo_mat=approximation_matrix.tocoo(), cls=OriginalGraph
                 )
                 logger.info(
@@ -228,7 +247,6 @@ def run_approximation(config: AscaConfig):
                 current_iteration += 1
 
         except Exception as e:
-            step.output_file.unlink()
             logger.exception(
                 "ASCA failed for coarse=%s %s, subgraph=%s %s",
                 step.coarse_selection_method_name,
@@ -263,13 +281,13 @@ def store_iteration(
     coarse_count: int,
 ):
     with h5py.File(path, mode="a") as file:
-        iteration_group = file.require_group(f"iteration{iteration}")
-        adj_mat_group = iteration_group.require_group("adj_matrix")
+        iteration_group = file.require_group(f"{ITERATION_PREFIX}{iteration}")
+        adj_mat_group = iteration_group.require_group(HDF5_ADJACENCY_MATRIX)
         utils.write_csr_matrix(adj_mat_group, adj_matrix)
-        approximation_group = iteration_group.require_group("approximation")
+        approximation_group = iteration_group.require_group(HDF5_APPROXIMATION_MATRIX)
         utils.write_csr_matrix(approximation_group, approximation)
-        iteration_group.create_dataset("subgraph_size", data=mean_subgraph_count)
-        iteration_group.create_dataset("coarse_count", data=coarse_count)
+        iteration_group.create_dataset(HDF5_SUBGRAPH_SIZE, data=mean_subgraph_count)
+        iteration_group.create_dataset(HDF5_COARSE_COUNT, data=coarse_count)
 
 
 def calculate_approximation(
