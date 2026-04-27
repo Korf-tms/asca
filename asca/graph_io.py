@@ -1,5 +1,5 @@
 from scipy.sparse import coo_matrix
-import pandas as pd
+import numpy as np
 import h5py
 import scipy.io as spio
 import pathlib as pl
@@ -140,9 +140,9 @@ def from_csv(path, cls=Graph):
     Graph
         An instance of cls constructed from the CSV data.
     """
-    dataframe = pd.read_csv(path)
+    dense = np.loadtxt(path, delimiter=",")
 
-    return from_coo(dataframe["row"], dataframe["col"], dataframe["val"], cls=cls)
+    return from_coo(coo_mat=coo_matrix(dense), cls=cls)
 
 
 def from_hdf5(path, cls=Graph):

@@ -316,7 +316,7 @@ def eigsh_evaluation(iteration_data: Iteration):
 
     start_time = time.perf_counter()
 
-    if iteration_data.schur_complement_matrix.shape[0] < 20000:
+    if iteration_data.schur_complement_matrix.shape[0] < 4000:
         logger.info(
             "Iteration %s: computing all eigenvalues.",
             iteration_data.iteration,
