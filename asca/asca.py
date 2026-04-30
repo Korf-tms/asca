@@ -42,6 +42,26 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Config:
+    """Store configuration of one ASCA execution.
+
+    Attributes
+    ----------
+    coarse_selection_method_name : str
+        Name of the coarse vertex selection method to be used.
+    coarse_selection_method : Callable
+        The coarse vertex selection method to be used.
+    coarse_selection_method_arguments : dict
+        Arguments of the coarse vertex selection method to be used.
+    subgraph_creation_method_name : str
+        Name of the subgraph creation method to be used.
+    subgraph_creation_method : Callable
+        The subgraph creation method to be used.
+    subgraph_creation_method_arguments : dict
+        Arguments of the subgraph creation method to be used.
+    output_file : pl.Path
+        Output HDF5 file path for the results.
+    """
+
     coarse_selection_method_name: str
     coarse_selection_method: Callable
     coarse_selection_method_arguments: dict
@@ -53,6 +73,33 @@ class Config:
 
 @dataclass
 class AscaConfig:
+    """Configuration of ASCA execution on one file, can have multiple different methods
+    for coarse selection and subgraph creation as well as different parameters.
+
+    Attributes
+    ----------
+    filename : pl.Path | str
+        Input graph file path.
+    coarse_selection_method : str | list[str]
+        Coarse selection method name(s).
+    coarse_selection_method_arguments : dict | list[dict] | None
+        Arguments for coarse selection methods.
+    subgraph_creation_method : str | list[str]
+        Subgraph creation method name(s).
+    subgraph_creation_method_arguments : dict | list[dict] | None
+        Arguments for subgraph creation methods.
+    output_file : pl.Path | str | None
+        Optional base output file path.
+    iterations : int
+        Number of ASCA iterations to run.
+    path : pl.Path
+        Resolved input file path.
+    base_output_file : pl.Path
+        Base output file path used when no output_file is provided.
+    config : list[Config]
+        Resolved ASCA configurations for each method combination.
+    """
+
     filename: pl.Path | str
     coarse_selection_method: str | list[str] = DEFAULT_COARSE_SELECTION_METHOD
     coarse_selection_method_arguments: dict | list[dict] | None = None
@@ -81,13 +128,41 @@ class AscaConfig:
 
     @staticmethod
     def _ensure_list(value):
+        """Ensures a value is list.
+
+        Parameters
+        ----------
+        value : any
+            Single value or list of values.
+
+        Returns
+        -------
+        list
+            The value wrapped in a list if it was not already a list.
+        """
+
         return value if isinstance(value, list) else [value]
 
     @staticmethod
     def _format_arguments(arguments: dict) -> str:
+        """Format method arguments for an output filename.
+
+        Parameters
+        ----------
+        arguments : dict
+            Method arguments to format.
+
+        Returns
+        -------
+        str
+            A string of sorted key/value pairs joined by underscores.
+        """
+
         return "_".join(f"{key}{value}" for key, value in sorted(arguments.items()))
 
     def __post_init__(self):
+        """Resolve paths and build the ASCA configurations."""
+
         utils.create_folder(DATA_FOLDER)
 
         coarse_selection_method_arguments = self.coarse_selection_method_arguments
@@ -123,38 +198,46 @@ class AscaConfig:
             raise ValueError(
                 "Method lists and argument lists must have the same length."
             )
-
-        self.config = [
-            Config(
-                coarse_selection_method_name=coarse_method_name,
-                coarse_selection_method=self.coarse_selection_methods[
-                    coarse_method_name
-                ],
-                coarse_selection_method_arguments=coarse_method_arguments,
-                subgraph_creation_method_name=subgraph_method_name,
-                subgraph_creation_method=self.create_subgraphs_methods[
-                    subgraph_method_name
-                ],
-                subgraph_creation_method_arguments=subgraph_method_arguments,
-                output_file=self.base_output_file.with_name(
-                    f"{self.base_output_file.stem}_{coarse_method_name}_{self._format_arguments(coarse_method_arguments)}_{subgraph_method_name}_{self._format_arguments(subgraph_method_arguments)}{self.base_output_file.suffix}"
-                ),
+        self.config = []
+        for (
+            coarse_method_name,
+            coarse_method_arguments,
+            subgraph_method_name,
+            subgraph_method_arguments,
+        ) in zip(
+            coarse_selection_method,
+            coarse_selection_method_arguments,
+            subgraph_creation_method,
+            subgraph_creation_method_arguments,
+        ):
+            self.config.append(
+                Config(
+                    coarse_selection_method_name=coarse_method_name,
+                    coarse_selection_method=self.coarse_selection_methods[
+                        coarse_method_name
+                    ],
+                    coarse_selection_method_arguments=coarse_method_arguments,
+                    subgraph_creation_method_name=subgraph_method_name,
+                    subgraph_creation_method=self.create_subgraphs_methods[
+                        subgraph_method_name
+                    ],
+                    subgraph_creation_method_arguments=subgraph_method_arguments,
+                    output_file=self.base_output_file.with_name(
+                        f"{self.base_output_file.stem}_{coarse_method_name}_{self._format_arguments(coarse_method_arguments)}_{subgraph_method_name}_{self._format_arguments(subgraph_method_arguments)}{self.base_output_file.suffix}"
+                    ),
+                )
             )
-            for (
-                coarse_method_name,
-                coarse_method_arguments,
-                subgraph_method_name,
-                subgraph_method_arguments,
-            ) in zip(
-                coarse_selection_method,
-                coarse_selection_method_arguments,
-                subgraph_creation_method,
-                subgraph_creation_method_arguments,
-            )
-        ]
 
 
 def run_approximation(config: AscaConfig):
+    """Run ASCA approximation for each configured method combination.
+
+    Parameters
+    ----------
+    config : AscaConfig
+        ASCA configuration containing input path, methods, and output targets.
+    """
+
     logger.info(
         "Starting ASCA for %s config(s), %s iteration(s) each",
         len(config.config),
@@ -265,6 +348,20 @@ def run_approximation(config: AscaConfig):
 
 
 def laplacian_to_adj_mat(laplacian: csr_matrix) -> csr_matrix:
+    """Convert a Laplacian matrix to an adjacency matrix,
+    assumes the Laplacian matrix has negative values off diagonal.
+
+    Parameters
+    ----------
+    laplacian : csr_matrix
+        Graph Laplacian matrix.
+
+    Returns
+    -------
+    csr_matrix
+        Adjacency matrix with zero diagonal and negative off diagonals removed.
+    """
+
     adj_matrix: csr_matrix = laplacian.copy()
     adj_matrix = -adj_matrix
     adj_matrix.setdiag(0)
@@ -280,6 +377,28 @@ def store_iteration(
     mean_subgraph_count: int,
     coarse_count: int,
 ):
+    """Store one ASCA iteration in an HDF5 output file.
+
+    Parameters
+    ----------
+    path : str | pl.Path
+        Output file path.
+    iteration : int
+        Iteration index.
+    adj_matrix : csr_matrix
+        Input adjacency matrix.
+    approximation : csr_matrix
+        Computed approximation matrix.
+    mean_subgraph_count : int
+        Mean size of the subgraphs.
+    coarse_count : int
+        Number of coarse vertices.
+
+    Returns
+    -------
+    None
+    """
+
     with h5py.File(path, mode="a") as file:
         iteration_group = file.require_group(f"{ITERATION_PREFIX}{iteration}")
         adj_mat_group = iteration_group.require_group(HDF5_ADJACENCY_MATRIX)
@@ -297,6 +416,27 @@ def calculate_approximation(
     subgraph_creation_method,
     subgraph_creation_method_arguments: dict,
 ):
+    """Calculate one ASCA approximation matrix for a graph.
+
+    Parameters
+    ----------
+    in_graph : OriginalGraph
+        Graph to approximate.
+    coarse_selection_method : callable
+        Method used to select coarse vertices.
+    coarse_selection_method_arguments : dict
+        Arguments for the coarse selection method.
+    subgraph_creation_method : callable
+        Method used to create subgraphs.
+    subgraph_creation_method_arguments : dict
+        Arguments for the subgraph creation method.
+
+    Returns
+    -------
+    csr_matrix
+        Approximation of the Schur complement.
+    """
+
     degrees = [(x, len(x.adj)) for x in in_graph.vertex_list]
     logger.info(
         "Starting approximation: vertices=%s, min degree=%s, max degree=%s",
@@ -304,6 +444,8 @@ def calculate_approximation(
         min(degrees, key=lambda x: x[1])[1],
         max(degrees, key=lambda x: x[1])[1],
     )
+
+    """Select coarse vertices."""
 
     logger.info("Selecting coarse vertices")
     start_time = time.perf_counter()
@@ -313,6 +455,8 @@ def calculate_approximation(
         time.perf_counter() - start_time,
         in_graph.coarse_vertices_count,
     )
+
+    """Create subgraphs."""
 
     logger.info("Creating subgraphs")
     start_time = time.perf_counter()
@@ -330,6 +474,8 @@ def calculate_approximation(
         "Edge multiplicity calculation took %.2fs",
         time.perf_counter() - start_time,
     )
+
+    """Calculate local Schur complements and assemble approximation."""
 
     logger.info("Computing approximation matrix")
     start_time = time.perf_counter()
