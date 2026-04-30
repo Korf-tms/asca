@@ -137,13 +137,13 @@ def get_mis_set_ordered(vertex_list: list[Vertex], size: int = 1) -> set[Vertex]
     - No two vertices are within the specified distance.
     - No additional vertex can be added without violating this condition.
 
-    Produces the same independent set on the same graph.
-    Order of the input matters.
+    The order of the input list determines which vertices are considered first.
+    The input list is consumed during selection.
 
     Parameters
     ----------
-    vertex_list : list[Vertex] or set[Vertex]
-        Collection of vertices to select from.
+    vertex_list : list[Vertex]
+        Ordered collection of vertices to select from.
     size : int, default=1
         Minimal distance from other vertices in the mis set.
         A value of 1 corresponds to the standard MIS definition.

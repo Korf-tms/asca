@@ -51,12 +51,14 @@ def moore_neighborhood_around_coarse(graph: OriginalGraph, size: int = 2):
     """
     Create subgraphs around coarse vertices using Moore neighborhoods.
 
+    Neighborhoods with fewer than three coarse vertices are skipped.
+
     Parameters
     ----------
     graph : OriginalGraph
         Graph containing coarse vertices.
     size : int, default=2
-        Neighborhood size used for subgraph construction, inclusive.
+        Moore neighborhood radius used for subgraph construction, inclusive.
     """
 
     logging.info("Using moore around coarse method")
@@ -91,12 +93,14 @@ def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
     """
     Create subgraphs for all vertices using Moore neighborhood.
 
+    Neighborhoods with fewer than three coarse vertices are skipped.
+
     Parameters
     ----------
     graph : OriginalGraph
         Graph containing vertices and coarse vertex information.
     size : int, default=2
-        Neighborhood size used for subgraph construction, inclusive.
+        Moore neighborhood radius used for subgraph construction, inclusive.
     """
     logging.info("Using moore neighborhood all method")
 
@@ -126,7 +130,9 @@ def moore_neighborhood_all(graph: OriginalGraph, size: int = 2):
 
 def depth(graph: OriginalGraph, size: int = 2):
     """
-    Create subgraphs around coarse vertices, each subgeraph is a neighborhood of size.
+    Create subgraphs around coarse vertices using depth-limited neighborhoods.
+
+    Neighborhoods with fewer than three coarse vertices are skipped.
 
     Parameters
     ----------

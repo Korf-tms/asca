@@ -323,7 +323,7 @@ def eigsh_evaluation(iteration_data: Iteration):
         )
         eigenvalues = eigvalsh(
             a=iteration_data.schur_complement_matrix.todense(),
-            b=iteration_data.approximation_matrix.todense()
+            b=iteration_data.approximation_matrix.todense(),
         )
     else:
         k = min(6, iteration_data.schur_complement_matrix.shape[0] - 1)

@@ -115,7 +115,7 @@ def mis_degree_desc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
 def mis_strength_desc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     """
     Select coarse vertices using a maximal independent set (MIS).
-    The vertices are sorted by their strength in descending order.
+    The vertices are sorted by their strength in ascending order.
 
     Parameters
     ----------
@@ -146,7 +146,7 @@ def mis_strength_desc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
 def mis_strength_asc(graph: OriginalGraph, size: int = 1) -> set[Vertex]:
     """
     Select coarse vertices using a maximal independent set (MIS).
-    The vertices are sorted by their strength in ascending order.
+    The vertices are sorted by their strength in descending order.
 
     Parameters
     ----------

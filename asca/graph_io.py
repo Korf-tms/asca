@@ -13,7 +13,7 @@ def from_file(path: str | pl.Path, cls=Graph):
 
     Supported formats
     -----------------
-    - .csv: COO triplet data with columns row, col, and val
+    - .csv: dense adjacency matrix readable by numpy.loadtxt
     - .hdf5: HDF5 file containing either coo_matrix or adj_matrix
     - .mat: MATLAB file containing a sparse adjacency matrix under mat["Problem"]
     - .mtx: Matrix Market file containing a dense or sparse matrix
@@ -58,6 +58,10 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
 
     - rows, cols, and values
     - coo_mat
+
+    Row, column, and value entries are converted to their absolute values.
+    Self-loops are ignored. Each remaining entry creates one stored edge from
+    row to column.
 
     Parameters
     ----------
@@ -120,13 +124,7 @@ def from_coo(rows=None, cols=None, values=None, coo_mat: coo_matrix = None, cls=
 
 def from_csv(path, cls=Graph):
     """
-    Load a graph from a CSV file containing COO-format data.
-
-    The CSV file must contain the following columns:
-
-    - row: row indices
-    - col: column indices
-    - val: entry values
+    Load a graph from a CSV file containing a dense adjacency matrix.
 
     Parameters
     ----------
@@ -138,7 +136,7 @@ def from_csv(path, cls=Graph):
     Returns
     -------
     Graph
-        An instance of cls constructed from the CSV data.
+        An instance of cls constructed from non-zero entries of the CSV matrix.
     """
     dense = np.loadtxt(path, delimiter=",")
 

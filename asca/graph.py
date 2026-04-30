@@ -6,23 +6,23 @@ from numpy import float64
 
 class Edge:
     """
-    Representation of an ordered edge between two distinct vertices.
+    Representation of edge between two distinct vertices.
 
     Parameters
     ----------
     first : Vertex
-        One endpoint of the edge.
+        Source vertex for this edge.
     second : Vertex
-        The other endpoint of the edge.
+        Target vertex for this edge.
     weight : int
         Weight (or value) associated with the edge.
 
     Attributes
     ----------
     first : Vertex
-        First endpoint.
+        Source vertex.
     second : Vertex
-        Second endpoint.
+        Target vertex.
     weight : int
         Edge weight.
     multiplicity : int
@@ -45,19 +45,14 @@ class Edge:
     def __eq__(self, other):
         return isinstance(other, Edge) and self._unique == other._unique
 
-    def get_other(self, vertex: Vertex) -> Vertex:
+    def get_other(self) -> Vertex:
         """
-        Return the opposite endpoint of the edge.
-
-        Parameters
-        ----------
-        vertex : Vertex
-            One endpoint of the edge.
+        Return the target endpoint of the edge.
 
         Returns
         -------
         Vertex
-            The other endpoint of the edge.
+            The target endpoint of the edge.
         """
         return self.second
 
@@ -85,14 +80,14 @@ class Vertex:
 
     def get_adj(self) -> set[Vertex]:
         """
-        Get adjacent vertices.
+        Get all adjacent vertices.
 
         Returns
         -------
         set[Vertex]
             Set of vertices connected to this vertex by an edge.
         """
-        return {edge.get_other(self) for edge in self.adj}
+        return {edge.get_other() for edge in self.adj}
 
     def get_in_subgraph(self, subgraph: set[Vertex]) -> set[Edge]:
         """
@@ -110,7 +105,7 @@ class Vertex:
         """
         if self not in subgraph:
             raise ValueError("Vertex not in subgraph.")
-        return {edge for edge in self.adj if edge.get_other(self) in subgraph}
+        return {edge for edge in self.adj if edge.get_other() in subgraph}
 
     def __str__(self):
         return f"Vertex: {self.id}"
@@ -209,8 +204,8 @@ class OriginalGraph(Graph):
     ----------
     coarse_vertices : set[Vertex]
         Set of coarse vertices.
-    subgraph_list : list[SubGraph]
-        List of subgraphs derived from this graph.
+    subgraph_list : set[SubGraph]
+        Set of subgraphs derived from this graph.
     """
 
     def __init__(self, vertex_list: set[Vertex] | list[Vertex], name="OriginalGraph"):

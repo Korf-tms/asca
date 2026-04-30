@@ -445,8 +445,7 @@ def calculate_approximation(
         max(degrees, key=lambda x: x[1])[1],
     )
 
-    """Select coarse vertices."""
-
+    # Select coarse vertices.
     logger.info("Selecting coarse vertices")
     start_time = time.perf_counter()
     coarse_selection_method(in_graph, **coarse_selection_method_arguments)
@@ -456,8 +455,7 @@ def calculate_approximation(
         in_graph.coarse_vertices_count,
     )
 
-    """Create subgraphs."""
-
+    # Create subgraphs.
     logger.info("Creating subgraphs")
     start_time = time.perf_counter()
     subgraph_creation_method(in_graph, **subgraph_creation_method_arguments)
@@ -475,8 +473,7 @@ def calculate_approximation(
         time.perf_counter() - start_time,
     )
 
-    """Calculate local Schur complements and assemble approximation."""
-
+    # Calculate local Schur complements and assemble approximation.
     logger.info("Computing approximation matrix")
     start_time = time.perf_counter()
     approximation_matrix = csr_matrix(
