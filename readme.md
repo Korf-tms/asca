@@ -46,6 +46,9 @@ python main.py
 
 The script runs ASCA on selected matrices, evaluates the results, and generates figures.
 
+>[!WARNING]  
+>The ct2010 matrix corresponding to the Test 5: U.S census 2010 is large and can take large amout of time to evaulate.
+
 ## ASCA Configuration
 
 ASCA is configured with `AscaConfig`:
