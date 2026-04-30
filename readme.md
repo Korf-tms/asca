@@ -11,13 +11,12 @@ The implementation of ASCA (additive Schur complement approximation) that is bas
   - `matrices/annulus.mtx` - corresponds to the third test Test 3: Annulus mesh
   - `matrices/olafu.mtx` - corresponds to the fourth test Test 4: Structure mesh
   - `matrices/ct2010.mtx` - corresponds to the fifth test Test 5: U.S. Census 2010
-  - `matrices/example.mtx` - this is the example graph used in visualizating the subgraph selection emthods Figures 4.3 and 4.4
+  - `matrices/example.mtx` - this is the example graph used in visualizating the subgraph selection methods Figures 4.3 and 4.4
 - `data/` - generated ASCA approximation outputs
 - `evaluation/` - generated evaluation results
 - `schur_cache/` - cached exact Schur complements
 - `figures/` - generated plots and figures
 - `log.log` - log file
-Generated folders are ignored by Git.
 
 ## Requirements
 
