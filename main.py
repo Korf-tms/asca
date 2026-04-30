@@ -137,8 +137,6 @@ files = [
     for p in folder.iterdir()
     if p.is_file()
     and "evaluation" not in p.stem
-    and "annulus" not in p.stem
-    and "110x110" not in p.stem
 ]
 
 evauation_config = EvaluatorConfig(input_files=files)
