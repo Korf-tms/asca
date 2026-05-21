@@ -22,6 +22,7 @@ The project uses Python and the following main packages:
 - `h5py`
 - `joblib`
 - `matplotlib`
+- `petsc4py`
 
 Install them with:
 
