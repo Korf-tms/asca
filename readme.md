@@ -120,3 +120,9 @@ Plotting helpers are available in `asca.visualization`:
 - `approximation`
 
 These functions read generated HDF5 files and create matplotlib figures.
+
+## Known issues
+
+ - Saving results to `.hdf5` needs some improvement
+ - Naming in pictures
+ - More experiments
