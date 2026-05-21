@@ -1,4 +1,5 @@
 import logging
+import sys
 from dataclasses import dataclass
 
 import pathlib as pl
@@ -17,7 +18,10 @@ from asca.visualization import (
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
-    filename="log.log",
+    handlers=[
+        logging.FileHandler("log.log"),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 
 # Run ASCA on all selected graphs.
