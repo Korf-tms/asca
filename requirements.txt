@@ -3,3 +3,4 @@ scipy
 h5py
 joblib
 matplotlib
+petsc4py

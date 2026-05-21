@@ -207,6 +207,7 @@ def eigenvalues(
     iteration: int = 0,
     ax=None,
     output_file: str | None = None,
+    plot_type: str = "lines",
 ):
     eigenvalues_condition_numbers = []
 
@@ -246,41 +247,70 @@ def eigenvalues(
         eigenvalues_condition_numbers.sort(
             key=lambda item: max(item["eigenvalues"]), reverse=True
         )
-
-    bp = ax.boxplot(
-        x=[x["eigenvalues"] for x in eigenvalues_condition_numbers],
-        positions=[i * spacing for i in range(len(eigenvalues_condition_numbers))],
-        tick_labels=[x["label"] for x in eigenvalues_condition_numbers],
-        medianprops=dict(color="black"),
-        patch_artist=True,
-        boxprops=dict(facecolor="lightblue"),
-        widths=0.2,
-    )
-    for box, item in zip(bp["boxes"], eigenvalues_condition_numbers):
-        if item["color"] is not None:
-            color = item["color"]
-            box.set_facecolor(color)
-            box.set_edgecolor("black")
-    for i, eigenvalue_condition_number in enumerate(eigenvalues_condition_numbers):
-        ax.hlines(
-            y=eigenvalue_condition_number["condition_number"],
-            xmin=i * spacing - 0.1,
-            xmax=i * spacing + 0.1,
-            colors="black",
-            linewidth=2,
-            label="Condition number" if i == 0 else "",
-            linestyles="dashed",
+    if plot_type == "boxplot":
+        bp = ax.boxplot(
+            x=[x["eigenvalues"] for x in eigenvalues_condition_numbers],
+            positions=[i * spacing for i in range(len(eigenvalues_condition_numbers))],
+            tick_labels=[x["label"] for x in eigenvalues_condition_numbers],
+            medianprops=dict(color="black"),
+            patch_artist=True,
+            boxprops=dict(facecolor="lightblue"),
+            widths=0.2,
         )
+        for box, item in zip(bp["boxes"], eigenvalues_condition_numbers):
+            if item["color"] is not None:
+                color = item["color"]
+                box.set_facecolor(color)
+                box.set_edgecolor("black")
+        for i, eigenvalue_condition_number in enumerate(eigenvalues_condition_numbers):
+            ax.hlines(
+                y=eigenvalue_condition_number["condition_number"],
+                xmin=i * spacing - 0.1,
+                xmax=i * spacing + 0.1,
+                colors="black",
+                linewidth=2,
+                label="Condition number" if i == 0 else "",
+                linestyles="dashed",
+            )
+    elif plot_type == "curves":
+        for item in eigenvalues_condition_numbers:
+            ax.plot(
+                item["eigenvalues"],
+                marker="o",
+                linestyle="-",
+                color="lightcoral" if item["color"] is None else item["color"],
+                label=item["label"],
+            )
+    elif plot_type == "lines":
+        for i, item in enumerate(eigenvalues_condition_numbers, start=1):
+            ax.plot(
+                item["eigenvalues"],
+                [i for _ in item["eigenvalues"]],
+                marker="o",
+                linestyle="-",
+                color="lightcoral" if item["color"] is None else item["color"],
+                label=item["label"],
+            )
+
+        y_ticks = list(range(1, len(eigenvalues_condition_numbers) + 1))
+        ax.set_yticks(y_ticks)
+        ax.set_yticklabels([item["label"] for item in eigenvalues_condition_numbers])
+        ax.set_ylim(0.5, len(eigenvalues_condition_numbers) + 0.5)
+
+    else:
+        raise ValueError(f"Invalid plot type: {plot_type}")
 
     ax.set_title("Eigenvalues")
-    ax.set_xlabel("")
-    ax.set_ylabel("Eigenvalues")
+    if plot_type != "lines":
+        ax.set_xlabel("")
+        ax.set_ylabel("Eigenvalues")
+        ax.grid(True, which="major", axis="y", linestyle="--", linewidth=0.5)
+        ax.grid(True, which="minor", axis="y", linestyle=":", linewidth=0.3)
+        ax.grid(True, which="major", axis="x", linestyle="--", linewidth=0.5)
+    else:
+        ax.set_xlabel("Eigenvalues")
 
     ax.legend()
-
-    ax.grid(True, which="major", axis="y", linestyle="--", linewidth=0.5)
-    ax.grid(True, which="minor", axis="y", linestyle=":", linewidth=0.3)
-    ax.grid(True, which="major", axis="x", linestyle="--", linewidth=0.5)
 
     if created_fig:
         plt.tight_layout()
@@ -292,7 +322,11 @@ def eigenvalues(
 
 
 def approximation(
-    file: pl.Path | str, iteration: int = 0, ax=None, output_file: str | None = None
+    file: pl.Path | str,
+    iteration: int = 0,
+    ax=None,
+    output_file: str | None = None,
+    title: str | None = None,
 ):
     matrix = 0
     with h5py.File(file) as hdf_file:
@@ -307,6 +341,7 @@ def approximation(
         created_fig = True
 
     ax.spy(matrix, markersize=0.1, color="black")
+    ax.set_title(f"Approximation sparsity pattern (iteration {iteration})")
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_aspect("equal", adjustable="box")
@@ -314,5 +349,5 @@ def approximation(
     if created_fig:
         plt.tight_layout()
         if output_file is not None:
-            plt.savefig(output_file, dpi=500)
+            plt.savefig(output_file, dpi=500, box_inches="tight")
         plt.show()

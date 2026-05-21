@@ -80,7 +80,7 @@ groups.append(
             ],
         ],
         "grid",
-        False,
+        True,
         True,
     )
 )
@@ -93,7 +93,7 @@ for group in groups:
         )
         for i, files in enumerate(group.plots):
             eigenvalues(
-                files, colors=["darkred", "red", "lightcoral"], ax=eig_plot[0, i]
+                files, colors=["darkred", "red", "lightcoral"], ax=eig_plot[0, i], plot_type="lines"
             )
         eig_fig.tight_layout()
         eig_fig.savefig(f"figures/{group.output_name}_eigenvalues.pdf", dpi=500)
@@ -126,6 +126,7 @@ file_groups = [
     Group(
         [
             "data/110x110_moore_size1_moore_coarse_size2.hdf5",
+            "data/110x110_moore_size1_moore_coarse_size4.hdf5",
             "data/110x110_moore_size1_moore_coarse_size10.hdf5",
         ],
         "grid",
@@ -133,8 +134,14 @@ file_groups = [
 ]
 
 for group in file_groups:
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(2 * 5, 5), squeeze=False)
+    ncols = len(group.files)
+    fig, ax = plt.subplots(nrows=1, ncols=ncols, figsize=(ncols * 5, 5), squeeze=False)
     for i, file in enumerate(group.files):
-        approximation(file=file, ax=ax[0, i])
+        file_stem = pl.Path(file).stem
+        approximation(
+            file=file,
+            ax=ax[0, i],
+            title=f"{file_stem}",
+        )
     fig.tight_layout()
-    fig.savefig(f"figures/{group.name}_heatmap.png", dpi=500)
+    fig.savefig(f"figures/{group.name}_sparsity.png", dpi=600, bbox_inches="tight")

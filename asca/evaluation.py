@@ -4,10 +4,12 @@ import time
 from dataclasses import dataclass
 
 import h5py
+import matplotlib.pyplot as plt
 import numpy as np
-from scipy.sparse import csr_matrix, eye
-from scipy.sparse.linalg import LinearOperator, cg, eigsh, factorized
+from scipy.sparse import csr_matrix, eye, diags
+from scipy.sparse.linalg import LinearOperator, cg, eigsh, factorized, spilu, spsolve
 from scipy.linalg import eigvalsh, eigvals
+from petsc4py import PETSc
 
 from . import utils
 from .schur_complement import schur_complement
@@ -33,7 +35,34 @@ OUTPUT_ERROR_HISTORY = "error_history"
 OUTPUT_RESIDUAL_HISTORY = "residual_history"
 OUTPUT_EIGENVALUES = "eigenvalues"
 OUTPUT_CONDITION_NUMBER = "condition_number"
-NORMALIZATION = 1e-5
+NORMALIZATION = 1e-8
+PETSC_ILU_LEVELS = 4
+
+
+class PetscIluKSPSolver:
+    def __init__(self, matrix: csr_matrix, levels: int = PETSC_ILU_LEVELS):
+        csr = matrix.tocsr()
+        self._mat = PETSc.Mat().createAIJ(
+            size=csr.shape,
+            csr=(csr.indptr, csr.indices, csr.data),
+        )
+        self._mat.assemblyBegin()
+        self._mat.assemblyEnd()
+
+        self._ksp = PETSc.KSP().create()
+        self._ksp.setOperators(self._mat)
+        self._ksp.setType("preonly")
+        pc = self._ksp.getPC()
+        pc.setType("ilu")
+        pc.setFactorLevels(levels)
+        self._ksp.setUp()
+
+    def solve(self, rhs: np.ndarray) -> np.ndarray:
+        rhs_array = np.asarray(rhs, dtype=np.float64)
+        rhs_vec = PETSc.Vec().createWithArray(rhs_array)
+        solution_vec = PETSc.Vec().createSeq(rhs_array.shape[0])
+        self._ksp.solve(rhs_vec, solution_vec)
+        return solution_vec.getArray(readonly=True).copy()
 
 
 @dataclass
@@ -107,6 +136,8 @@ def run_evaluation(config: EvaluatorConfig):
                 logger.info("Iteration %s: starting eigenvalue evaluation", iteration)
                 output.update(eigsh_evaluation(iteration_data))
                 logger.info("Iteration %s: finished eigenvalue evaluation", iteration)
+
+            block_solver_evaluation(iteration_data)
 
             output[OUTPUT_VERTEX_COUNT] = iteration_data.vertex_count
             output[OUTPUT_COARSE_COUNT] = iteration_data.coarse_count
@@ -350,3 +381,127 @@ def eigsh_evaluation(iteration_data: Iteration):
         OUTPUT_EIGENVALUES: eigenvalues,
         OUTPUT_CONDITION_NUMBER: condition_number,
     }
+
+
+def block_solver_evaluation(iteration_data: Iteration, solver: str = "spilu"):
+    logger.info(
+        f"Iteration {iteration_data.iteration}: starting block solver evaluation"
+    )
+    Q = iteration_data.approximation_matrix
+    W = iteration_data.adjacency_matrix
+    degrees = np.asarray(W.sum(axis=1)).ravel()
+    A = diags(degrees) - W
+
+    coarse_count = int(iteration_data.coarse_count)
+
+    A_cf = A[:coarse_count, coarse_count:].tocsr()
+    A_ff = A[iteration_data.coarse_count:, iteration_data.coarse_count:].tocsr()
+    A_fc = A[iteration_data.coarse_count:, :iteration_data.coarse_count].tocsr()
+    A_cc = A[:coarse_count, :coarse_count].tocsr()
+    # kernel of A
+    ones = np.ones(A.shape[0])
+    ones = ones / np.linalg.norm(ones)
+
+    if solver == "spilu":
+        scipy_ilu = spilu(A_ff.tocsc(), drop_tol=1e-8, fill_factor=10)
+        A_ff_precond = LinearOperator(
+            shape=A_ff.shape,
+            matvec=scipy_ilu.solve,
+            dtype=np.float64,
+        )
+        logger.info(
+            f"Iteration {iteration_data.iteration}: using SciPy ILU preconditioner for fine solve",
+        )
+    elif solver == "petsc_ilu":
+        petsc_solver = PetscIluKSPSolver(A_ff, levels=PETSC_ILU_LEVELS)
+        A_ff_precond = LinearOperator(
+            shape=A_ff.shape,
+            matvec=petsc_solver.solve,
+            dtype=np.float64,
+        )
+        logger.info(
+            f"Iteration {iteration_data.iteration}: using PETSc ILU preconditioner for fine solve with levels={PETSC_ILU_LEVELS}",
+        )
+    else:
+        raise ValueError(f"Unknown solver: {solver}")
+    logger.info(
+        f"Iteration {iteration_data.iteration}: Q block is solved using spsolve, no preconditioner",
+    )
+
+    ilu_iters = 0
+
+    def ilu_callback(x):
+        nonlocal ilu_iters
+        ilu_iters += 1
+
+
+    def solve_fine(rhs_fine):
+        solution, info = cg(
+            A=A_ff,
+            b=rhs_fine,
+            M=A_ff_precond,
+            rtol=1e-10,
+            atol=0.0,
+            callback=ilu_callback,
+            maxiter=200,
+        )
+        if info != 0:
+            raise RuntimeError(f"CG did not converge: info={info}")
+        return solution
+
+    # L^T D L action with Q instead of Schur complement
+    def block_preco_action(x):
+        x_coarse = x[:iteration_data.coarse_count]
+        x_fine = x[iteration_data.coarse_count:]
+
+        x_coarse = x_coarse - A_cf @ solve_fine(x_fine)
+        # x_fine = x_fine
+
+        x_coarse = spsolve(Q, x_coarse)
+        # x_coarse, coarse_info = cg(Q, x_coarse, rtol=1e-10, atol=0.0, maxiter=200)
+        # if coarse_info != 0:
+        #     raise RuntimeError(f"Coarse solve did not converge: info={coarse_info}")
+        x_fine = solve_fine(x_fine)
+
+        # x_coarse = x_coarse
+        x_fine = x_fine - solve_fine(A_fc @ x_coarse)
+
+        return np.concatenate([x_coarse, x_fine])
+
+    preco = LinearOperator(shape=A.shape, matvec=block_preco_action)
+    x_exact = np.random.rand(A.shape[0])
+    x_exact = x_exact - np.dot(ones, x_exact) * ones
+    rhs = A @ x_exact
+
+    iteration_count = 0
+    error_history = []
+    residual_history = []
+
+    def cg_callback(x_current):
+        nonlocal iteration_count, error_history, residual_history
+        iteration_count += 1
+        print(f"Block CG iteration {iteration_count}")
+        x_current = x_current - np.dot(ones, x_current) * ones
+        error_history.append(np.linalg.norm(x_exact - x_current))
+        residual_history.append(np.linalg.norm(rhs - A @ x_current))
+
+    x, info = cg(A, rhs, M=preco, rtol=1e-10, atol=0.0, callback=cg_callback)
+
+    logger.info(
+        f"Iteration {iteration_data.iteration}: block CG solve finished after {iteration_count} iterations with info={info}",
+    )
+    logger.info(
+            f"ILU preconditioner had {ilu_iters} iterations, average {ilu_iters/iteration_count/3} per fine solver call.",
+    )
+
+    print(
+        f"Solving with original matrix and SC decomposition, {info=}, {iteration_count=}, "
+        f"backends=(fine:spilu, fake_Q:petsc_ilu(k={PETSC_ILU_LEVELS}))"
+    )
+    print(f"ILU preconditioner had {ilu_iters} iterations, average {ilu_iters/iteration_count/3} per fine solver call.")
+    # print(f'ilu inside Q had {ilu_iters2} iterations, average {ilu_iters2/iteration_count} per coarse solve call.')
+    for i, error in enumerate(error_history):
+        print(f"  Iteration {i}: error = {error:.8e}, relative error = {error/np.linalg.norm(x_exact):.8e}")
+    for i, residual in enumerate(residual_history):
+        print(f"  Iteration {i}: residual = {residual:.8e}, relative residual = {residual/np.linalg.norm(rhs):.8e}")
+
