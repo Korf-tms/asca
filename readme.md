@@ -1,17 +1,12 @@
 # Additive Approximation of the Schur Complement
+Python implementation of ASCA (additive Schur complement approximation) that is based on the paper [Auxiliary Space Multigrid Method Based on Additive Schur Complement Approximation for Graph Laplacian](https://arxiv.org/abs/1708.05738) and sources therein.
 
-The implementation of ASCA (additive Schur complement approximation) that is based on the algorithm described in the work.
+Fork of the bachelor thesis repository https://github.com/jn-flk/asca.
 
 ## Repository Structure
 - `asca/` - implementation
 - `main.py` - script that generates all of the test data and figures
 - `matrices/` - the tested graphs in adjacency matrix form
-  - `matrices/110x110.hdf5` - corresponds to the first test Test 1: Grid
-  - `matrices/skirt.mtx` - corresponds to the second test Test 2: Skirt mesh
-  - `matrices/annulus.mtx` - corresponds to the third test Test 3: Annulus mesh
-  - `matrices/olafu.mtx` - corresponds to the fourth test Test 4: Structure mesh
-  - `matrices/ct2010.mtx` - corresponds to the fifth test Test 5: U.S. Census 2010
-  - `matrices/example.mtx` - this is the example graph used in visualizating the subgraph selection methods Figures 4.3 and 4.4
 - `data/` - generated ASCA approximation outputs
 - `evaluation/` - generated evaluation results
 - `schur_cache/` - cached exact Schur complements
@@ -46,8 +41,6 @@ python main.py
 
 The script creates all the data and figures used in Chapter 5: Testing
 
->[!WARNING]  
->The ct2010 matrix corresponding to the Test 5: U.S census 2010 is large and can take large amout of time to evaulate.
 
 ## ASCA Configuration
 
