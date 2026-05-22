@@ -1,12 +1,12 @@
 # Additive Approximation of the Schur Complement
-Python implementation of ASCA (additive Schur complement approximation) that is based on the paper [Auxiliary Space Multigrid Method Based on Additive Schur Complement Approximation for Graph Laplacian](https://arxiv.org/abs/1708.05738) and sources therein.
+Python implementation of ASCA (additive Schur complement approximation) that is based on the paper [Auxiliary Space Multigrid Method Based on Additive Schur Complement Approximation for Graph Laplacian](https://arxiv.org/abs/1708.05738) and sources therein, namely [Additive Schur Complement Approximation and Application to Multilevel Preconditioning](https://epubs.siam.org/doi/10.1137/110845082).
 
 Fork of the bachelor thesis repository https://github.com/jn-flk/asca.
 
 ## Repository Structure
 - `asca/` - implementation
 - `main.py` - script that generates all of the test data and figures
-- `matrices/` - the tested graphs in adjacency matrix form
+- `matrices/` - the tested graphs in adjacency matrix form and fem matrix generators
 - `data/` - generated ASCA approximation outputs
 - `evaluation/` - generated evaluation results
 - `schur_cache/` - cached exact Schur complements
@@ -15,20 +15,15 @@ Fork of the bachelor thesis repository https://github.com/jn-flk/asca.
 
 ## Requirements
 
-The project uses Python and the following main packages:
+The program is written in Python and the following main packages:
 
 - `numpy`
 - `scipy`
 - `h5py`
 - `joblib`
 - `matplotlib`
-- `petsc4py`
+- `petsc4py` (not necessary, only for ilu factorization)
 
-Install them with:
-
-```bash
-pip install -r requirements.txt
-```
 
 ## Usage
 
