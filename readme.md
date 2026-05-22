@@ -23,6 +23,8 @@ The program is written in Python and the following main packages:
 - `joblib`
 - `matplotlib`
 - `petsc4py` (not necessary, only for ilu factorization)
+- `gmsh` (mesh generator for tests)
+- `dolfinx` (laplacian matrix generator for tests)
 
 
 ## Usage
