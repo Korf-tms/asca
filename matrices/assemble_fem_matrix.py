@@ -8,9 +8,10 @@ import matplotlib.tri as mtri
 
 from mpi4py import MPI
 from dolfinx.fem.petsc import assemble_matrix
+from matplotlib.colors import LogNorm
 
 
-def assemble_laplacian(mesh, mean : float=None, sigma: float=None, seed: int=None):
+def assemble_laplacian(mesh, mean: float = None, sigma: float = None, seed: int = None):
     """
     Assemble a P(1) FEM laplacian matrix on the given mesh. If mean, sigma,
     and seed are provided the matrix is assembled with a ramdom log-normal
@@ -27,17 +28,19 @@ def assemble_laplacian(mesh, mean : float=None, sigma: float=None, seed: int=Non
     """
 
     rng = np.random.default_rng(seed)
-    
+
     # finite element choice 
     V = dfx.fem.functionspace(mesh, ('Lagrange', 1))
     # auxiliary field for coefficient
     W = dfx.fem.functionspace(mesh, ('DG', 0))
     kappa = dfx.fem.Function(W)
     if mean is not None and sigma is not None:
-        kappa.x.array[:] = rng.lognormal(mean=mean, sigma=sigma, size=kappa.x.array.shape)
+        vals = rng.lognormal(mean=mean, sigma=sigma, size=kappa.x.array.shape)
+        kappa.x.array[:] = vals
+        print('max(k)/min(k)=', np.max(vals)/np.min(vals))
     else:
         kappa.x.array[:] = 1.0
-    
+
     # variational form and assembly
     u, v = ufl.TrialFunction(V), ufl.TestFunction(V)
     a = ufl.inner(kappa * ufl.grad(u), ufl.grad(v)) * ufl.dx
@@ -50,6 +53,7 @@ def assemble_laplacian(mesh, mean : float=None, sigma: float=None, seed: int=Non
     indptr, cols, values = A.getValuesCSR()
     A_scipy = scipy.sparse.csr_matrix((values, cols, indptr), shape=A.size)
     return A_scipy, kappa
+
 
 def plot_kappa_on_mesh(mesh, kappa, output_file):
     """
@@ -69,7 +73,13 @@ def plot_kappa_on_mesh(mesh, kappa, output_file):
     cell_values = np.asarray(kappa.x.array[:num_cells_local])
 
     plt.figure(figsize=(8, 6))
-    trip = plt.tripcolor(triangulation, facecolors=cell_values, edgecolors='k', cmap='viridis')
+    trip = plt.tripcolor(triangulation, facecolors=cell_values, edgecolors='k',
+                         cmap='viridis',
+                         norm=LogNorm(
+                             vmin=cell_values.min(),
+                             vmax=cell_values.max()
+                             )
+                         )
     plt.colorbar(trip, label='kappa value')
     plt.title('Coefficient Field kappa on Mesh')
     plt.xlabel('x')
@@ -78,6 +88,7 @@ def plot_kappa_on_mesh(mesh, kappa, output_file):
     plt.tight_layout()
     plt.savefig(output_file)
     plt.close()
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
@@ -90,15 +101,15 @@ if __name__ == "__main__":
         mesh = mesh_file.read_mesh(name='Grid')
 
     # Prepare Laplacian
-    A, kappa_values = assemble_laplacian(mesh, mean=0.0, sigma=1e-6)
+    A, kappa_values = assemble_laplacian(mesh, mean=0.0, sigma=3)
     scipy.io.mmwrite('fem_laplacian.mtx', A.tocoo())
     print(f"Laplacian written to fem_laplacian.mtx")
-    
+
     plot_kappa_on_mesh(mesh, kappa_values, 'kappa_plot.pdf')
     print(f"kappa plot saved to kappa_plot.pdf")
 
     # Save DOF coordinates for nice plot of C-F splitting and subgarphs
     V = dfx.fem.functionspace(mesh, ('Lagrange', 1))
     dof_coords = V.tabulate_dof_coordinates()[:, :2]
-    np.savetxt('fem_laplacian_coords.csv', dof_coords, delimiter=',', header='x,y', comments='')
+    np.savetxt('fem_laplacian_coords.csv', dof_coords, delimiter=',', header='x,y')
     print(f"DOF coordinates written to fem_laplacian_coords.csv ({len(dof_coords)} DOFs)")
